@@ -26,24 +26,34 @@
         }
     });
 
-    // Canvas dimensions
-    let canvasWidth = $state(window.innerWidth);
-    let canvasHeight = $state(window.innerHeight);
+    // Canvas dimensions - will be set from container
+    let canvasWidth = $state(0);
+    let canvasHeight = $state(0);
+    let canvasContainer: HTMLDivElement;
 
     // Calculate scale factor to fit everything on screen with padding
+    // Account for overflowing floorboards (one board length can extend beyond room on EITHER top or bottom)
     const padding = 50; // px
     let scale = $derived.by(() => {
+        const totalHeight = roomDimensions.height + boardDimensions.height * 2; // Room + possible overflow on top + possible overflow on bottom
         const scaleX = (canvasWidth - 2 * padding) / roomDimensions.width;
-        const scaleY = (canvasHeight - 2 * padding) / roomDimensions.height;
+        const scaleY = (canvasHeight - 2 * padding) / totalHeight;
         return Math.min(scaleX, scaleY);
     });
 
     // Convert mm to px
     const mmToPx = (mm: number) => mm * scale;
 
-    // Room position (centered on canvas)
+    // Room position (centered on canvas, accounting for overflow space on both sides)
     let roomX = $derived((canvasWidth - mmToPx(roomDimensions.width)) / 2);
-    let roomY = $derived((canvasHeight - mmToPx(roomDimensions.height)) / 2);
+    // Total visual height includes room + overflow space on both sides
+    // Center this total height, which automatically accounts for overflow
+    let totalVisualHeight = $derived(
+        mmToPx(roomDimensions.height + boardDimensions.height * 2),
+    );
+    let roomY = $derived(
+        (canvasHeight - totalVisualHeight) / 2 + mmToPx(boardDimensions.height),
+    );
 
     // Calculate constraints for global offset
     // The leftmost board should not go past the left edge of the room
@@ -51,11 +61,20 @@
     let minGlobalOffset = $derived(-(numRows - 1) * boardDimensions.width);
     let maxGlobalOffset = $derived(0);
 
-    // Handle window resize
-    function handleResize() {
-        canvasWidth = window.innerWidth;
-        canvasHeight = window.innerHeight;
+    // Update canvas size from container
+    function updateCanvasSize() {
+        if (canvasContainer) {
+            canvasWidth = canvasContainer.clientWidth;
+            canvasHeight = canvasContainer.clientHeight;
+        }
     }
+
+    // Initialize canvas size and handle window resize
+    $effect(() => {
+        updateCanvasSize();
+        window.addEventListener("resize", updateCanvasSize);
+        return () => window.removeEventListener("resize", updateCanvasSize);
+    });
 
     // Update row offset
     function updateRowOffset(index: number, offset: number) {
@@ -69,47 +88,141 @@
             Math.min(maxGlobalOffset, newOffset),
         );
     }
+
+    // Randomize all row offsets
+    function randomizeOffsets() {
+        const newOffsets: Record<number, number> = {};
+        for (let i = 0; i < numRows; i++) {
+            // Random offset between 0 and -boardHeight
+            newOffsets[i] = -Math.random() * boardDimensions.height;
+        }
+        rowOffsets = newOffsets;
+    }
 </script>
 
-<svelte:window on:resize={handleResize} />
+<div class="app-container">
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <h2>Floorboard Planner</h2>
 
-<Stage config={{ width: canvasWidth, height: canvasHeight }}>
-    <Layer>
-        <!-- Room outline (centered, dashed) -->
-        <Rect
-            config={{
-                x: roomX,
-                y: roomY,
-                width: mmToPx(roomDimensions.width),
-                height: mmToPx(roomDimensions.height),
-                stroke: "#cccccc",
-                strokeWidth: 2,
-                dash: [10, 5],
-            }}
-        />
+        <div class="section">
+            <h3>Layout Controls</h3>
+            <button class="btn-primary" onclick={randomizeOffsets}>
+                Randomize Offsets
+            </button>
+        </div>
 
-        <!-- Render each row of floorboards -->
-        {#each Array(numRows) as _, rowIndex}
-            <FloorboardRow
-                {rowIndex}
-                {roomX}
-                {roomY}
-                {boardDimensions}
-                {roomDimensions}
-                {visualGap}
-                {scale}
-                {globalOffset}
-                rowOffset={rowOffsets[rowIndex] ?? 0}
-                onUpdateRowOffset={(offset) =>
-                    updateRowOffset(rowIndex, offset)}
-            />
-        {/each}
-    </Layer>
-</Stage>
+        <div class="section">
+            <h3>Offcuts</h3>
+            <p class="placeholder">Offcut list will appear here</p>
+        </div>
+    </div>
+
+    <!-- Canvas -->
+    <div class="canvas-container" bind:this={canvasContainer}>
+        <Stage width={canvasWidth} height={canvasHeight}>
+            <Layer>
+                <!-- Room outline (centered, dashed) -->
+                <Rect
+                    x={roomX}
+                    y={roomY}
+                    width={mmToPx(roomDimensions.width)}
+                    height={mmToPx(roomDimensions.height)}
+                    stroke="#cccccc"
+                    strokeWidth={2}
+                    dash={[10, 5]}
+                />
+
+                <!-- Render each row of floorboards -->
+                {#each Array(numRows) as _, rowIndex}
+                    <FloorboardRow
+                        {rowIndex}
+                        {roomX}
+                        {roomY}
+                        {boardDimensions}
+                        {roomDimensions}
+                        {visualGap}
+                        {scale}
+                        {globalOffset}
+                        rowOffset={rowOffsets[rowIndex] ?? 0}
+                        onUpdateRowOffset={(offset) =>
+                            updateRowOffset(rowIndex, offset)}
+                    />
+                {/each}
+            </Layer>
+        </Stage>
+    </div>
+</div>
 
 <style>
     :global(body) {
         margin: 0;
+        overflow: hidden;
+    }
+
+    .app-container {
+        display: flex;
+        width: 100vw;
+        height: 100vh;
+    }
+
+    .sidebar {
+        width: 300px;
+        background: #2c2c2c;
+        color: #ffffff;
+        padding: 20px;
+        overflow-y: auto;
+        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+    }
+
+    .sidebar h2 {
+        margin: 0 0 20px 0;
+        font-size: 24px;
+        color: #ffffff;
+    }
+
+    .sidebar h3 {
+        margin: 0 0 12px 0;
+        font-size: 16px;
+        color: #cccccc;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    .section {
+        margin-bottom: 30px;
+    }
+
+    .btn-primary {
+        width: 100%;
+        padding: 12px 20px;
+        background: #8b6f47;
+        color: #ffffff;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .btn-primary:hover {
+        background: #9d7f5a;
+    }
+
+    .btn-primary:active {
+        background: #7a5f3a;
+    }
+
+    .placeholder {
+        color: #888888;
+        font-size: 14px;
+        font-style: italic;
+    }
+
+    .canvas-container {
+        flex: 1;
+        position: relative;
         overflow: hidden;
     }
 </style>

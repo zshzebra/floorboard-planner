@@ -40,9 +40,10 @@
     // The offset shifts boards vertically, so we need to calculate visible portions
     let boardsToRender = $derived.by(() => {
         const boards: Array<{
-            y: number;
-            height: number;
-            isOffcut: boolean;
+            yStart: number;
+            yEnd: number;
+            insideStart: number;
+            insideEnd: number;
         }> = [];
 
         const boardHeight = boardDimensions.height;
@@ -51,37 +52,28 @@
         // Starting Y position in mm (accounting for row offset)
         let currentY = rowOffset;
 
-        // If offset is negative, we start with an offcut at the top
-        if (currentY < 0) {
-            const visibleHeight = boardHeight + currentY;
-            if (visibleHeight > 0) {
-                boards.push({
-                    y: 0,
-                    height: visibleHeight,
-                    isOffcut: true,
-                });
-            }
-            currentY = currentY + boardHeight;
-        }
+        // Calculate how many boards we need
+        // We need exactly one more board than what fits in the room
+        // This allows shifting within one board length range without gaps
+        const numBoardsNeeded = Math.ceil(roomHeight / boardHeight) + 1;
 
-        // Add full boards
-        while (currentY + boardHeight <= roomHeight) {
+        // Render all boards, they may extend outside the room
+        for (let i = 0; i < numBoardsNeeded; i++) {
+            const boardStart = currentY;
+            const boardEnd = currentY + boardHeight;
+
+            // Calculate the part of the board that's inside the room
+            const insideStart = Math.max(0, boardStart);
+            const insideEnd = Math.min(roomHeight, boardEnd);
+
             boards.push({
-                y: currentY,
-                height: boardHeight,
-                isOffcut: false,
+                yStart: boardStart,
+                yEnd: boardEnd,
+                insideStart,
+                insideEnd,
             });
+
             currentY += boardHeight;
-        }
-
-        // Add final offcut if there's remaining space
-        if (currentY < roomHeight) {
-            const remainingHeight = roomHeight - currentY;
-            boards.push({
-                y: currentY,
-                height: remainingHeight,
-                isOffcut: true,
-            });
         }
 
         return boards;
@@ -89,6 +81,10 @@
 
     // Drag handling
     let dragStartOffset = 0;
+
+    // Constrain offset to one board length of travel
+    const minOffset = -boardDimensions.height;
+    const maxOffset = 0;
 
     function handleDragStart() {
         dragStartOffset = rowOffset;
@@ -98,7 +94,10 @@
         const group = e.target;
         const deltaY = group.y();
         const deltaMm = deltaY / scale;
-        const newOffset = dragStartOffset + deltaMm;
+        let newOffset = dragStartOffset + deltaMm;
+
+        // Constrain to one board length range
+        newOffset = Math.max(minOffset, Math.min(maxOffset, newOffset));
 
         onUpdateRowOffset(newOffset);
 
@@ -113,25 +112,50 @@
 </script>
 
 <Group
-    config={{
-        draggable: true,
-        dragBoundFunc: (pos: any) => {
-            // Constrain dragging to vertical axis only
-            return { x: 0, y: pos.y };
-        },
-        ondragstart: handleDragStart,
-        ondragmove: handleDragMove,
-        ondragend: handleDragEnd,
+    draggable={true}
+    dragBoundFunc={(pos) => {
+        // Constrain dragging to vertical axis only
+        return { x: 0, y: pos.y };
     }}
+    ondragstart={handleDragStart}
+    ondragmove={handleDragMove}
+    ondragend={handleDragEnd}
 >
     {#each boardsToRender as board}
-        <Floorboard
-            x={rowX}
-            y={roomY + mmToPx(board.y)}
-            width={mmToPx(boardDimensions.width)}
-            height={mmToPx(board.height)}
-            strokeWidth={mmToPx(visualGap)}
-            isOffcut={board.isOffcut}
-        />
+        {#if board.yStart < 0}
+            <!-- Board extends above room - render top offcut -->
+            <Floorboard
+                x={rowX}
+                y={roomY + mmToPx(board.yStart)}
+                width={mmToPx(boardDimensions.width)}
+                height={mmToPx(board.insideStart - board.yStart)}
+                strokeWidth={mmToPx(visualGap)}
+                isOffcut={true}
+            />
+        {/if}
+
+        {#if board.insideEnd > board.insideStart}
+            <!-- Part of board inside room -->
+            <Floorboard
+                x={rowX}
+                y={roomY + mmToPx(board.insideStart)}
+                width={mmToPx(boardDimensions.width)}
+                height={mmToPx(board.insideEnd - board.insideStart)}
+                strokeWidth={mmToPx(visualGap)}
+                isOffcut={false}
+            />
+        {/if}
+
+        {#if board.yEnd > roomDimensions.height}
+            <!-- Board extends below room - render bottom offcut -->
+            <Floorboard
+                x={rowX}
+                y={roomY + mmToPx(board.insideEnd)}
+                width={mmToPx(boardDimensions.width)}
+                height={mmToPx(board.yEnd - board.insideEnd)}
+                strokeWidth={mmToPx(visualGap)}
+                isOffcut={true}
+            />
+        {/if}
     {/each}
 </Group>

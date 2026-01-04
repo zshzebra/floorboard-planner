@@ -13,18 +13,8 @@
     let { x, y, width, height, strokeWidth, isOffcut }: Props = $props();
 
     // Colors - derived to react to prop changes
-    const boardFill = $derived(isOffcut ? "#9D7F5A" : "#8B6F47"); // Slightly lighter for offcuts
-    const boardStroke = "#5C4033";
+    let fill = $derived(isOffcut ? "#9D7F5A" : "#8B6F47"); // Slightly lighter for offcuts
+    let stroke = "#5C4033";
 </script>
 
-<Rect
-    config={{
-        x,
-        y,
-        width,
-        height,
-        fill: boardFill,
-        stroke: boardStroke,
-        strokeWidth,
-    }}
-/>
+<Rect {x} {y} {width} {height} {fill} {stroke} {strokeWidth} />
