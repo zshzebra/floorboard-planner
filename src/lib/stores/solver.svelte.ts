@@ -1,3 +1,4 @@
+import init, { initThreadPool, Solver } from "../solver/pkg/floorboard_solver";
 import type { ProjectConfig } from "../types/project";
 
 interface ScoredLayout {
@@ -14,10 +15,12 @@ interface Layout {
 
 type CandidateCallback = (layout: Layout, score: number, iteration: number) => void;
 
+const BATCH_SIZE = 1000;
+const MAX_NO_IMPROVEMENT = 5_000_000;
+
 class SolverStore {
-  private worker: Worker | null = null;
-  private pendingResolve: ((value: unknown) => void) | null = null;
-  private candidateCallback: CandidateCallback | null = null;
+  private solver: Solver | null = null;
+  private stopRequested = false;
 
   isReady = $state(false);
   isProcessing = $state(false);
@@ -31,75 +34,27 @@ class SolverStore {
 
     const roomHeight = this.getRoomHeight(config);
 
-    this.worker = new Worker(
-      new URL("../workers/solverWorker.ts", import.meta.url),
-      { type: "module" }
+    await init();
+    await initThreadPool(navigator.hardwareConcurrency);
+
+    this.solver = new Solver(
+      {
+        plank_full_length: config.plankFullLength,
+        plank_width: config.plankWidth,
+        room_height: roomHeight,
+        saw_kerf: config.sawKerf,
+        min_cut_length: config.minCutLength,
+        max_unique_cuts: config.maxUniqueCuts,
+      },
+      {
+        cutting_simplicity: config.optimizationWeights.cuttingSimplicity / 100,
+        waste_minimization: config.optimizationWeights.wasteMinimization / 100,
+        visual_randomness: config.optimizationWeights.visualRandomness / 100,
+      },
+      numRows
     );
 
-    return new Promise((resolve, reject) => {
-      if (!this.worker) {
-        reject(new Error("Worker failed to create"));
-        return;
-      }
-
-      this.worker.onmessage = (e) => {
-        const { type } = e.data;
-
-        if (type === "ready") {
-          this.isReady = true;
-          resolve();
-        } else if (type === "result" || type === "score") {
-          this.isProcessing = false;
-          if (this.pendingResolve) {
-            this.pendingResolve(e.data);
-            this.pendingResolve = null;
-          }
-        } else if (type === "candidate") {
-          this.bestScore = e.data.score;
-          this.currentIteration = e.data.iteration;
-          if (this.candidateCallback) {
-            this.candidateCallback(e.data.layout, e.data.score, e.data.iteration);
-          }
-        } else if (type === "progress") {
-          this.currentIteration = e.data.iteration;
-          this.bestScore = e.data.bestScore;
-        } else if (type === "searchComplete") {
-          this.isSearching = false;
-          this.candidateCallback = null;
-        } else if (type === "error") {
-          this.isProcessing = false;
-          this.isSearching = false;
-          console.error("Solver error:", e.data.message);
-          if (this.pendingResolve) {
-            reject(new Error(e.data.message));
-          }
-        }
-      };
-
-      this.worker.onerror = (err) => {
-        this.isProcessing = false;
-        this.isSearching = false;
-        reject(err);
-      };
-
-      this.worker.postMessage({
-        type: "init",
-        config: {
-          plank_full_length: config.plankFullLength,
-          plank_width: config.plankWidth,
-          room_height: roomHeight,
-          saw_kerf: config.sawKerf,
-          min_cut_length: config.minCutLength,
-          max_unique_cuts: config.maxUniqueCuts,
-        },
-        weights: {
-          cutting_simplicity: config.optimizationWeights.cuttingSimplicity / 100,
-          waste_minimization: config.optimizationWeights.wasteMinimization / 100,
-          visual_randomness: config.optimizationWeights.visualRandomness / 100,
-        },
-        numRows,
-      });
-    });
+    this.isReady = true;
   }
 
   private getRoomHeight(config: ProjectConfig): number {
@@ -108,88 +63,84 @@ class SolverStore {
     return Math.max(...ys) - Math.min(...ys);
   }
 
-  async generateRandom(): Promise<Layout> {
-    if (!this.worker || !this.isReady) {
+  generateRandom(): Layout {
+    if (!this.solver || !this.isReady) {
       throw new Error("Solver not initialized");
     }
-
-    this.isProcessing = true;
-    this.worker.postMessage({ type: "generate" });
-
-    return new Promise((resolve) => {
-      this.pendingResolve = (data: unknown) => {
-        resolve((data as { layout: Layout }).layout);
-      };
-    });
+    return this.solver.generate_random() as Layout;
   }
 
-  async optimize(layout: Layout, maxIterations = 10000): Promise<Layout> {
-    if (!this.worker || !this.isReady) {
+  optimize(layout: Layout, maxIterations = 10000): Layout {
+    if (!this.solver || !this.isReady) {
       throw new Error("Solver not initialized");
     }
-
-    this.isProcessing = true;
-    this.worker.postMessage({
-      type: "optimize",
-      layout: { row_offsets: [...layout.row_offsets] },
-      maxIterations,
-    });
-
-    return new Promise((resolve) => {
-      this.pendingResolve = (data: unknown) => {
-        resolve((data as { layout: Layout }).layout);
-      };
-    });
+    return this.solver.optimize({ row_offsets: [...layout.row_offsets] }, maxIterations) as Layout;
   }
 
-  async scoreLayout(layout: Layout): Promise<ScoredLayout> {
-    if (!this.worker || !this.isReady) {
+  scoreLayout(layout: Layout): ScoredLayout {
+    if (!this.solver || !this.isReady) {
       throw new Error("Solver not initialized");
     }
-
-    this.isProcessing = true;
-    this.worker.postMessage({ type: "score", layout: { row_offsets: [...layout.row_offsets] } });
-
-    return new Promise((resolve) => {
-      this.pendingResolve = (data: unknown) => {
-        const scored = (data as { score: ScoredLayout }).score;
-        this.currentScore = scored;
-        resolve(scored);
-      };
-    });
+    const scored = this.solver.score_layout({ row_offsets: [...layout.row_offsets] }) as ScoredLayout;
+    this.currentScore = scored;
+    return scored;
   }
 
   startSearch(layout: Layout, onCandidate: CandidateCallback): void {
-    if (!this.worker || !this.isReady) {
+    if (!this.solver || !this.isReady) {
       throw new Error("Solver not initialized");
     }
 
     this.isSearching = true;
     this.currentIteration = 0;
     this.bestScore = null;
-    this.candidateCallback = onCandidate;
-    this.worker.postMessage({
-      type: "startSearch",
-      currentLayout: { row_offsets: [...layout.row_offsets] },
-    });
+    this.stopRequested = false;
+
+    let best = this.scoreLayout(layout);
+    let noImprovementCount = 0;
+    let iteration = 0;
+
+    const runBatch = () => {
+      if (this.stopRequested || noImprovementCount >= MAX_NO_IMPROVEMENT) {
+        this.isSearching = false;
+        return;
+      }
+
+      const candidate = this.solver!.generate_batch_best(BATCH_SIZE) as ScoredLayout;
+      iteration += BATCH_SIZE;
+
+      if (candidate.total_score > best.total_score) {
+        best = candidate;
+        noImprovementCount = 0;
+        onCandidate(best.layout, best.total_score, iteration);
+      } else {
+        noImprovementCount += BATCH_SIZE;
+      }
+
+      this.currentIteration = iteration;
+      this.bestScore = best.total_score;
+
+      // Yield to keep UI responsive, then continue
+      setTimeout(runBatch, 0);
+    };
+
+    runBatch();
   }
 
   stopSearch(): void {
-    if (!this.worker) return;
-    this.worker.postMessage({ type: "stopSearch" });
+    this.stopRequested = true;
   }
 
   dispose(): void {
-    if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
+    this.stopRequested = true;
+    if (this.solver) {
+      this.solver.free();
+      this.solver = null;
     }
     this.isReady = false;
     this.isProcessing = false;
     this.isSearching = false;
     this.currentScore = null;
-    this.pendingResolve = null;
-    this.candidateCallback = null;
     this.currentIteration = 0;
     this.bestScore = null;
   }
