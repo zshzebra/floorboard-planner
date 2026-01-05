@@ -9,6 +9,16 @@
     let visualGap = 2; // mm
     let globalOffset = $state(0); // horizontal shift of entire layout
 
+    // Load wood texture
+    let woodTexture = $state<HTMLImageElement | null>(null);
+    $effect(() => {
+        const img = new Image();
+        img.onload = () => {
+            woodTexture = img;
+        };
+        img.src = "/wood.jpg";
+    });
+
     // Calculate number of rows
     let numRows = $derived(
         Math.ceil(roomDimensions.width / boardDimensions.width),
@@ -144,6 +154,7 @@
                         {visualGap}
                         {scale}
                         {globalOffset}
+                        {woodTexture}
                         rowOffset={rowOffsets[rowIndex] ?? 0}
                         onUpdateRowOffset={(offset) =>
                             updateRowOffset(rowIndex, offset)}

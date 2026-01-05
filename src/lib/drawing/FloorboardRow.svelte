@@ -12,6 +12,7 @@
         scale: number;
         globalOffset: number;
         rowOffset: number;
+        woodTexture: HTMLImageElement | null;
         onUpdateRowOffset: (offset: number) => void;
     }
 
@@ -25,6 +26,7 @@
         scale,
         globalOffset,
         rowOffset,
+        woodTexture,
         onUpdateRowOffset,
     }: Props = $props();
 
@@ -83,8 +85,8 @@
     let dragStartOffset = 0;
 
     // Constrain offset to one board length of travel
-    const minOffset = -boardDimensions.height;
-    const maxOffset = 0;
+    let minOffset = $derived(-boardDimensions.height);
+    let maxOffset = 0;
 
     function handleDragStart() {
         dragStartOffset = rowOffset;
@@ -121,7 +123,7 @@
     ondragmove={handleDragMove}
     ondragend={handleDragEnd}
 >
-    {#each boardsToRender as board}
+    {#each boardsToRender as board, boardIndex}
         {#if board.yStart < 0}
             <!-- Board extends above room - render top offcut -->
             <Floorboard
@@ -131,6 +133,9 @@
                 height={mmToPx(board.insideStart - board.yStart)}
                 strokeWidth={mmToPx(visualGap)}
                 isOffcut={true}
+                {woodTexture}
+                {rowIndex}
+                {boardIndex}
             />
         {/if}
 
@@ -143,6 +148,9 @@
                 height={mmToPx(board.insideEnd - board.insideStart)}
                 strokeWidth={mmToPx(visualGap)}
                 isOffcut={false}
+                {woodTexture}
+                {rowIndex}
+                {boardIndex}
             />
         {/if}
 
@@ -155,6 +163,9 @@
                 height={mmToPx(board.yEnd - board.insideEnd)}
                 strokeWidth={mmToPx(visualGap)}
                 isOffcut={true}
+                {woodTexture}
+                {rowIndex}
+                {boardIndex}
             />
         {/if}
     {/each}
