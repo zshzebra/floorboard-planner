@@ -1,5 +1,6 @@
 <script lang="ts">
     import { Layer, Stage, Rect } from "svelte-konva";
+    import { untrack } from "svelte";
     import "./app.css";
     import FloorboardRow from "./lib/drawing/FloorboardRow.svelte";
     import ProjectSettings from "./lib/components/ProjectSettings.svelte";
@@ -71,20 +72,31 @@
         return () => window.removeEventListener("resize", updateCanvasSize);
     });
 
+    function applyHistoryState(state: import("./lib/history/historyManager").HistoryState) {
+        for (let i = 0; i < state.rowOffsets.length; i++) {
+            projectStore.setRowOffset(i, state.rowOffsets[i]);
+        }
+    }
+
     $effect(() => {
         function handleKeydown(e: KeyboardEvent) {
             if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+                e.preventDefault();
                 if (e.shiftKey) {
-                    e.preventDefault();
-                    projectStore.redo();
+                    const state = historyStore.undoSkip("solver");
+                    if (state) applyHistoryState(state);
                 } else {
-                    e.preventDefault();
                     projectStore.undo();
                 }
             }
             if ((e.ctrlKey || e.metaKey) && e.key === "y") {
                 e.preventDefault();
-                projectStore.redo();
+                if (e.shiftKey) {
+                    const state = historyStore.redoSkip("solver");
+                    if (state) applyHistoryState(state);
+                } else {
+                    projectStore.redo();
+                }
             }
         }
         window.addEventListener("keydown", handleKeydown);
@@ -108,12 +120,27 @@
         return analyzer.analyze();
     });
 
+    let solverConfigKey = $derived(
+        JSON.stringify({
+            plankFullLength: projectStore.config.plankFullLength,
+            plankWidth: projectStore.config.plankWidth,
+            roomPolygon: projectStore.config.roomPolygon,
+            sawKerf: projectStore.config.sawKerf,
+            minCutLength: projectStore.config.minCutLength,
+            maxUniqueCuts: projectStore.config.maxUniqueCuts,
+            optimizationWeights: projectStore.config.optimizationWeights,
+            numRows: projectStore.numRows,
+        })
+    );
+
     $effect(() => {
-        const config = projectStore.config;
-        const numRows = projectStore.numRows;
+        const _key = solverConfigKey;
 
         solverError = null;
         solverInitialized = false;
+
+        const config = untrack(() => projectStore.config);
+        const numRows = untrack(() => projectStore.numRows);
 
         solverStore
             .init(config, numRows)
@@ -132,8 +159,6 @@
     function toggleSearch() {
         if (solverStore.isSearching) {
             solverStore.stopSearch();
-            const offsets = projectStore.config.rowOffsets;
-            historyStore.record("Optimized layout", offsets);
         } else {
             const numRows = projectStore.numRows;
             const existingOffsets = projectStore.config.rowOffsets;
@@ -142,10 +167,16 @@
                 rowOffsets.push(existingOffsets[i] ?? 0);
             }
 
-            solverStore.startSearch({ row_offsets: rowOffsets }, (layout) => {
+            solverStore.startSearch({ row_offsets: rowOffsets }, (layout, score, iteration) => {
                 for (let i = 0; i < layout.row_offsets.length; i++) {
                     projectStore.setRowOffset(i, layout.row_offsets[i]);
                 }
+                historyStore.record(
+                    `Solver: ${score.toFixed(3)} @ ${iteration}`,
+                    layout.row_offsets,
+                    undefined,
+                    "solver"
+                );
             });
         }
     }
@@ -180,15 +211,31 @@
             <div class="undo-redo-row">
                 <button
                     class="btn-secondary"
-                    onclick={() => projectStore.undo()}
+                    onclick={(e: MouseEvent) => {
+                        if (e.shiftKey) {
+                            const state = historyStore.undoSkip("solver");
+                            if (state) applyHistoryState(state);
+                        } else {
+                            projectStore.undo();
+                        }
+                    }}
                     disabled={!historyStore.canUndo}
+                    title="Hold Shift to skip solver steps"
                 >
                     Undo
                 </button>
                 <button
                     class="btn-secondary"
-                    onclick={() => projectStore.redo()}
+                    onclick={(e: MouseEvent) => {
+                        if (e.shiftKey) {
+                            const state = historyStore.redoSkip("solver");
+                            if (state) applyHistoryState(state);
+                        } else {
+                            projectStore.redo();
+                        }
+                    }}
                     disabled={!historyStore.canRedo}
+                    title="Hold Shift to skip solver steps"
                 >
                     Redo
                 </button>

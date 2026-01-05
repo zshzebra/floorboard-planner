@@ -66,9 +66,7 @@ async function runSearch(currentLayout: { row_offsets: number[] }) {
 
   try {
     stopRequested = false;
-    console.log("[Worker] Scoring initial layout...");
     let best: ScoredLayout = solver.score_layout(currentLayout) as ScoredLayout;
-    console.log("[Worker] Initial score:", best.total_score);
     let noImprovementCount = 0;
     let iteration = 0;
     const MAX_NO_IMPROVEMENT = 5_000_000;
@@ -165,11 +163,6 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
 
     case "startSearch": {
       const { currentLayout } = e.data as StartSearchMessage;
-      console.log(
-        "[Worker] Starting search with",
-        currentLayout.row_offsets.length,
-        "rows",
-      );
       runSearch(currentLayout);
       break;
     }

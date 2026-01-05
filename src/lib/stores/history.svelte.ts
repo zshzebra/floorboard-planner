@@ -20,8 +20,8 @@ class HistoryStore {
     this.updateState();
   }
 
-  record(description: string, rowOffsets: number[], config?: Partial<ProjectConfig>) {
-    this.manager.push(description, rowOffsets, config);
+  record(description: string, rowOffsets: number[], config?: Partial<ProjectConfig>, category?: "manual" | "solver") {
+    this.manager.push(description, rowOffsets, config, category);
     this.updateState();
   }
 
@@ -33,6 +33,18 @@ class HistoryStore {
 
   redo(): HistoryState | null {
     const state = this.manager.redo();
+    this.updateState();
+    return state;
+  }
+
+  undoSkip(category: string): HistoryState | null {
+    const state = this.manager.undoSkipCategory(category);
+    this.updateState();
+    return state;
+  }
+
+  redoSkip(category: string): HistoryState | null {
+    const state = this.manager.redoSkipCategory(category);
     this.updateState();
     return state;
   }

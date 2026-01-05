@@ -69,6 +69,32 @@ export class HistoryManager {
     return this.currentIndex < this.states.length - 1;
   }
 
+  undoSkipCategory(category: string): HistoryState | null {
+    while (this.canUndo()) {
+      this.currentIndex--;
+      const state = this.states[this.currentIndex];
+      if (state.category !== category) {
+        this.persist();
+        return state;
+      }
+    }
+    this.persist();
+    return this.states[this.currentIndex] ?? null;
+  }
+
+  redoSkipCategory(category: string): HistoryState | null {
+    while (this.canRedo()) {
+      this.currentIndex++;
+      const state = this.states[this.currentIndex];
+      if (state.category !== category) {
+        this.persist();
+        return state;
+      }
+    }
+    this.persist();
+    return this.states[this.currentIndex] ?? null;
+  }
+
   getCurrent(): HistoryState | null {
     return this.states[this.currentIndex] ?? null;
   }
