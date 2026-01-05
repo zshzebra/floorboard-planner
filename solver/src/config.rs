@@ -7,6 +7,7 @@ pub struct Config {
     pub room_height: f64,
     pub saw_kerf: f64,
     pub min_cut_length: f64,
+    pub max_unique_cuts: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

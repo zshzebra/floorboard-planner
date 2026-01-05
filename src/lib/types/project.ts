@@ -29,6 +29,8 @@ export interface ProjectConfig {
   rowOffsets: number[];
 
   optimizationWeights: OptimizationWeights;
+
+  maxUniqueCuts: number | null;
 }
 
 export const DEFAULT_CONFIG: Omit<ProjectConfig, "id" | "created" | "modified"> = {
@@ -51,6 +53,7 @@ export const DEFAULT_CONFIG: Omit<ProjectConfig, "id" | "created" | "modified"> 
     wasteMinimization: 50,
     visualRandomness: 50,
   },
+  maxUniqueCuts: null,
 };
 
 export function createProject(overrides?: Partial<ProjectConfig>): ProjectConfig {

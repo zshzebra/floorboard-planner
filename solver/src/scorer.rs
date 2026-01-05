@@ -1,5 +1,6 @@
 use crate::config::{Config, OptimizationWeights};
 use crate::layout::{Layout, ScoredLayout};
+use std::collections::HashSet;
 
 struct CutRequirement {
     length: f64,
@@ -10,6 +11,7 @@ struct AllocationResult {
     total_material: f64,
     offcuts_reused: usize,
     offcuts_wasted: usize,
+    unique_cuts: usize,
 }
 
 pub fn score(config: &Config, weights: &OptimizationWeights, layout: &Layout) -> ScoredLayout {
@@ -32,7 +34,7 @@ pub fn score(config: &Config, weights: &OptimizationWeights, layout: &Layout) ->
 
     let total_weight =
         weights.cutting_simplicity + weights.waste_minimization + weights.visual_randomness;
-    let total_score = if total_weight > 0.0 {
+    let mut total_score = if total_weight > 0.0 {
         (weights.cutting_simplicity * reuse_score
             + weights.waste_minimization * waste_score
             + weights.visual_randomness * randomness_score)
@@ -40,6 +42,12 @@ pub fn score(config: &Config, weights: &OptimizationWeights, layout: &Layout) ->
     } else {
         0.0
     };
+
+    if let Some(max) = config.max_unique_cuts {
+        if allocation.unique_cuts > max as usize {
+            total_score *= 0.01;
+        }
+    }
 
     ScoredLayout {
         layout: layout.clone(),
@@ -52,6 +60,13 @@ pub fn score(config: &Config, weights: &OptimizationWeights, layout: &Layout) ->
 
 fn allocate_material(config: &Config, layout: &Layout) -> AllocationResult {
     let requirements = calculate_requirements(config, layout);
+
+    let unique_lengths: HashSet<i64> = requirements
+        .iter()
+        .filter(|r| (r.length - config.plank_full_length).abs() > 0.1)
+        .map(|r| (r.length * 10.0) as i64)
+        .collect();
+    let unique_cuts = unique_lengths.len();
 
     let mut sorted_reqs: Vec<_> = requirements.iter().collect();
     sorted_reqs.sort_by(|a, b| b.length.partial_cmp(&a.length).unwrap());
@@ -107,6 +122,7 @@ fn allocate_material(config: &Config, layout: &Layout) -> AllocationResult {
         total_material,
         offcuts_reused,
         offcuts_wasted,
+        unique_cuts,
     }
 }
 

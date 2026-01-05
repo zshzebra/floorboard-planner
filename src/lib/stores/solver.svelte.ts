@@ -67,6 +67,7 @@ class SolverStore {
           room_height: roomHeight,
           saw_kerf: config.sawKerf,
           min_cut_length: config.minCutLength,
+          max_unique_cuts: config.maxUniqueCuts,
         },
         weights: {
           cutting_simplicity: config.optimizationWeights.cuttingSimplicity / 100,

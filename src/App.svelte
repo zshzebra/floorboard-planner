@@ -225,6 +225,26 @@
                 />
             </div>
 
+            <div class="slider-group">
+                <label>
+                    <span>Max Unique Cuts</span>
+                    <span class="slider-value">
+                        {projectStore.config.maxUniqueCuts === null ? "Unlimited" : projectStore.config.maxUniqueCuts}
+                    </span>
+                </label>
+                <input
+                    type="range"
+                    min="0"
+                    max={projectStore.numRows * 2}
+                    value={projectStore.config.maxUniqueCuts ?? 0}
+                    oninput={(e) => {
+                        const val = parseInt((e.target as HTMLInputElement).value);
+                        projectStore.updateConfig({ maxUniqueCuts: val === 0 ? null : val }, false);
+                    }}
+                />
+                <span class="slider-hint">Current: {cutList.uniqueCuts} unique cuts</span>
+            </div>
+
             <button
                 class="btn-optimize"
                 onclick={handleOptimize}
@@ -425,6 +445,13 @@
     .slider-value {
         color: #ffffff;
         font-weight: 500;
+    }
+
+    .slider-hint {
+        display: block;
+        margin-top: 4px;
+        font-size: 11px;
+        color: #888888;
     }
 
     .slider-group input[type="range"] {
