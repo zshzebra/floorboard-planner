@@ -6,9 +6,12 @@
     import CutListPanel from "./lib/components/CutListPanel.svelte";
     import { projectStore } from "./lib/stores/project.svelte";
     import { historyStore } from "./lib/stores/history.svelte";
+    import { solverStore } from "./lib/stores/solver.svelte";
     import { CutAnalyzer, type CutList } from "./lib/analysis/cutAnalyzer";
 
     let globalOffset = $state(0);
+    let solverInitialized = $state(false);
+    let solverError = $state<string | null>(null);
 
     let woodTexture = $state<HTMLImageElement | null>(null);
     $effect(() => {
@@ -96,6 +99,56 @@
         const analyzer = new CutAnalyzer(projectStore.config);
         return analyzer.analyze();
     });
+
+    $effect(() => {
+        const config = projectStore.config;
+        const numRows = projectStore.numRows;
+
+        solverError = null;
+        solverInitialized = false;
+
+        solverStore
+            .init(config, numRows)
+            .then(() => {
+                solverInitialized = true;
+            })
+            .catch((err) => {
+                solverError = err.message || "Failed to initialize solver";
+            });
+
+        return () => {
+            solverStore.dispose();
+        };
+    });
+
+    async function handleOptimize() {
+        if (!solverInitialized) return;
+
+        const numRows = projectStore.numRows;
+        const existingOffsets = projectStore.config.rowOffsets;
+        const rowOffsets: number[] = [];
+        for (let i = 0; i < numRows; i++) {
+            rowOffsets.push(existingOffsets[i] ?? 0);
+        }
+
+        const currentLayout = { row_offsets: rowOffsets };
+        const optimized = await solverStore.optimize(currentLayout, 10000);
+
+        const newOffsets = optimized.row_offsets;
+        for (let i = 0; i < newOffsets.length; i++) {
+            projectStore.setRowOffset(i, newOffsets[i]);
+        }
+        historyStore.record("Optimize layout", newOffsets);
+    }
+
+    function updateWeight(key: keyof typeof projectStore.config.optimizationWeights, value: number) {
+        projectStore.updateConfig({
+            optimizationWeights: {
+                ...projectStore.config.optimizationWeights,
+                [key]: value,
+            },
+        }, false);
+    }
 </script>
 
 <div class="app-container">
@@ -125,6 +178,70 @@
                     Redo
                 </button>
             </div>
+        </div>
+
+        <div class="section">
+            <h3>Optimization</h3>
+
+            <div class="slider-group">
+                <label>
+                    <span>Cutting Simplicity</span>
+                    <span class="slider-value">{projectStore.config.optimizationWeights.cuttingSimplicity}</span>
+                </label>
+                <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={projectStore.config.optimizationWeights.cuttingSimplicity}
+                    oninput={(e) => updateWeight("cuttingSimplicity", parseInt((e.target as HTMLInputElement).value))}
+                />
+            </div>
+
+            <div class="slider-group">
+                <label>
+                    <span>Waste Minimization</span>
+                    <span class="slider-value">{projectStore.config.optimizationWeights.wasteMinimization}</span>
+                </label>
+                <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={projectStore.config.optimizationWeights.wasteMinimization}
+                    oninput={(e) => updateWeight("wasteMinimization", parseInt((e.target as HTMLInputElement).value))}
+                />
+            </div>
+
+            <div class="slider-group">
+                <label>
+                    <span>Visual Randomness</span>
+                    <span class="slider-value">{projectStore.config.optimizationWeights.visualRandomness}</span>
+                </label>
+                <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={projectStore.config.optimizationWeights.visualRandomness}
+                    oninput={(e) => updateWeight("visualRandomness", parseInt((e.target as HTMLInputElement).value))}
+                />
+            </div>
+
+            <button
+                class="btn-optimize"
+                onclick={handleOptimize}
+                disabled={!solverInitialized || solverStore.isProcessing}
+            >
+                {#if solverStore.isProcessing}
+                    Optimizing...
+                {:else if !solverInitialized}
+                    Loading Solver...
+                {:else}
+                    Optimize Layout
+                {/if}
+            </button>
+
+            {#if solverError}
+                <p class="solver-error">{solverError}</p>
+            {/if}
         </div>
 
         <div class="section">
@@ -291,5 +408,81 @@
         flex: 1;
         position: relative;
         overflow: hidden;
+    }
+
+    .slider-group {
+        margin-bottom: 16px;
+    }
+
+    .slider-group label {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 6px;
+        font-size: 13px;
+        color: #aaaaaa;
+    }
+
+    .slider-value {
+        color: #ffffff;
+        font-weight: 500;
+    }
+
+    .slider-group input[type="range"] {
+        width: 100%;
+        height: 6px;
+        background: #444444;
+        border-radius: 3px;
+        appearance: none;
+        cursor: pointer;
+    }
+
+    .slider-group input[type="range"]::-webkit-slider-thumb {
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        background: #8b6f47;
+        border-radius: 50%;
+        cursor: pointer;
+    }
+
+    .slider-group input[type="range"]::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        background: #8b6f47;
+        border-radius: 50%;
+        cursor: pointer;
+        border: none;
+    }
+
+    .btn-optimize {
+        width: 100%;
+        padding: 12px 20px;
+        background: #3a5a8a;
+        color: #ffffff;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .btn-optimize:hover:not(:disabled) {
+        background: #4a6a9a;
+    }
+
+    .btn-optimize:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .solver-error {
+        margin: 10px 0 0 0;
+        padding: 8px 12px;
+        background: #3a2a2a;
+        border: 1px solid #5a3a3a;
+        border-radius: 4px;
+        color: #ff8888;
+        font-size: 13px;
     }
 </style>
