@@ -3,9 +3,12 @@
 
     interface Props {
         cutList: CutList | null;
+        onExport?: (includePageBreakMargins: boolean) => void;
     }
 
-    let { cutList }: Props = $props();
+    let { cutList, onExport }: Props = $props();
+
+    let includePageBreakMargins = $state(true);
 
     let sortedCuts = $derived.by(() => {
         if (!cutList) return [];
@@ -37,6 +40,17 @@
                 <span class="label">Waste:</span>
                 <span class="value">{(cutList.waste / 1000).toFixed(2)}m</span>
             </div>
+        </div>
+
+        <div class="export-group">
+            <label class="checkbox-label">
+                <input type="checkbox" bind:checked={includePageBreakMargins} />
+                Include page break margins
+            </label>
+            <button class="export-btn" onclick={() => onExport?.(includePageBreakMargins)}>
+                Export SVG
+                <span class="shortcut">Ctrl+E</span>
+            </button>
         </div>
 
         {#if sortedCuts.length > 0}
@@ -148,5 +162,52 @@
         color: #888888;
         font-size: 14px;
         font-style: italic;
+    }
+
+    .export-group {
+        margin-bottom: 16px;
+    }
+
+    .checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: #aaaaaa;
+        margin-bottom: 8px;
+        cursor: pointer;
+    }
+
+    .checkbox-label input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+        accent-color: #8b6f47;
+        cursor: pointer;
+    }
+
+    .export-btn {
+        width: 100%;
+        padding: 10px 12px;
+        background: #8b6f47;
+        color: #ffffff;
+        border: none;
+        border-radius: 4px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: background 0.15s;
+    }
+
+    .export-btn:hover {
+        background: #9d7f5a;
+    }
+
+    .shortcut {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.6);
+        font-weight: 400;
     }
 </style>

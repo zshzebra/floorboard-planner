@@ -9,6 +9,7 @@
     import { historyStore } from "./lib/stores/history.svelte";
     import { solverStore } from "./lib/stores/solver.svelte";
     import { CutAnalyzer, type CutList } from "./lib/analysis/cutAnalyzer";
+    import { generateCutListSVG, downloadSVG } from "./lib/export/svgExport";
 
     let globalOffset = $state(0);
     let solverInitialized = $state(false);
@@ -97,6 +98,10 @@
                 } else {
                     projectStore.redo();
                 }
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === "e") {
+                e.preventDefault();
+                handleExportSVG();
             }
         }
         window.addEventListener("keydown", handleKeydown);
@@ -194,6 +199,21 @@
             },
             false,
         );
+    }
+
+    let exportPageBreakMargins = $state(true);
+
+    async function handleExportSVG(includePageBreakMargins?: boolean) {
+        if (!cutList) return;
+        const useMargins = includePageBreakMargins ?? exportPageBreakMargins;
+        exportPageBreakMargins = useMargins;
+        const svg = await generateCutListSVG({
+            cutList,
+            plankFullLength: projectStore.config.plankFullLength,
+            woodTexture,
+            includePageBreakMargins: useMargins,
+        });
+        downloadSVG(svg);
     }
 </script>
 
@@ -390,7 +410,7 @@
 
         <div class="section">
             <h3>Cut List</h3>
-            <CutListPanel {cutList} />
+            <CutListPanel {cutList} onExport={handleExportSVG} />
         </div>
     </div>
 
