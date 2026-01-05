@@ -1,10 +1,15 @@
 <script lang="ts">
     import { projectStore } from "../stores/project.svelte";
     import { ProjectStorage, type ProjectMetadata } from "../storage/projectStorage";
+    import { SVGRoomImporter, type SVGImportResult } from "../import/svgImport";
+    import type { Point } from "../types/project";
 
     let showModal = $state(false);
     let showProjectList = $state(false);
     let projects = $state<ProjectMetadata[]>([]);
+    let importedPolygon = $state<Point[] | null>(null);
+    let importError = $state<string | null>(null);
+    let fileInput = $state<HTMLInputElement | null>(null);
 
     let name = $state("");
     let plankFullLength = $state(0);
@@ -40,7 +45,34 @@
         }
         roomWidth = bounds.width;
         roomHeight = bounds.height;
+        importedPolygon = null;
+        importError = null;
         showModal = true;
+    }
+
+    async function handleImportSVG(event: Event) {
+        const input = event.target as HTMLInputElement;
+        const file = input.files?.[0];
+        if (!file) return;
+
+        importError = null;
+        importedPolygon = null;
+
+        try {
+            const importer = new SVGRoomImporter();
+            const result = await importer.importFromFile(file);
+            importedPolygon = result.polygon;
+            roomWidth = result.bounds.width;
+            roomHeight = result.bounds.height;
+        } catch (err) {
+            importError = err instanceof Error ? err.message : "Failed to import SVG";
+        }
+
+        input.value = "";
+    }
+
+    function clearImportedPolygon() {
+        importedPolygon = null;
     }
 
     function closeModal() {
@@ -48,6 +80,12 @@
     }
 
     function saveSettings() {
+        const polygon = importedPolygon ?? [
+            { x: 0, y: 0 },
+            { x: roomWidth, y: 0 },
+            { x: roomWidth, y: roomHeight },
+            { x: 0, y: roomHeight },
+        ];
         projectStore.updateConfig({
             name,
             plankFullLength,
@@ -56,12 +94,7 @@
             visualGap,
             sawKerf,
             minCutLength,
-            roomPolygon: [
-                { x: 0, y: 0 },
-                { x: roomWidth, y: 0 },
-                { x: roomWidth, y: roomHeight },
-                { x: 0, y: roomHeight },
-            ],
+            roomPolygon: polygon,
         });
         showModal = false;
     }
@@ -136,12 +169,35 @@
             <div class="form-row">
                 <div class="form-group">
                     <label for="roomWidth">Width</label>
-                    <input id="roomWidth" type="number" bind:value={roomWidth} />
+                    <input id="roomWidth" type="number" bind:value={roomWidth} disabled={importedPolygon !== null} />
                 </div>
                 <div class="form-group">
                     <label for="roomHeight">Height</label>
-                    <input id="roomHeight" type="number" bind:value={roomHeight} />
+                    <input id="roomHeight" type="number" bind:value={roomHeight} disabled={importedPolygon !== null} />
                 </div>
+            </div>
+
+            <div class="import-section">
+                <input
+                    type="file"
+                    accept=".svg"
+                    bind:this={fileInput}
+                    onchange={handleImportSVG}
+                    class="hidden-input"
+                />
+                {#if importedPolygon}
+                    <div class="import-success">
+                        <span>Polygon imported ({importedPolygon.length} points)</span>
+                        <button class="btn-clear" onclick={clearImportedPolygon}>Clear</button>
+                    </div>
+                {:else}
+                    <button class="btn-import" onclick={() => fileInput?.click()}>
+                        Import Room from SVG
+                    </button>
+                {/if}
+                {#if importError}
+                    <p class="import-error">{importError}</p>
+                {/if}
             </div>
 
             <h4>Cutting Settings (mm)</h4>
@@ -423,5 +479,67 @@
         font-style: italic;
         text-align: center;
         padding: 20px;
+    }
+
+    .hidden-input {
+        display: none;
+    }
+
+    .import-section {
+        margin-top: 12px;
+    }
+
+    .btn-import {
+        width: 100%;
+        padding: 10px 16px;
+        background: #3a5a3a;
+        color: #ffffff;
+        border: none;
+        border-radius: 4px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .btn-import:hover {
+        background: #4a6a4a;
+    }
+
+    .import-success {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        background: #2a3a2a;
+        border: 1px solid #3a5a3a;
+        border-radius: 4px;
+        color: #88cc88;
+        font-size: 13px;
+    }
+
+    .btn-clear {
+        padding: 4px 10px;
+        background: transparent;
+        border: 1px solid #666666;
+        border-radius: 4px;
+        color: #aaaaaa;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .btn-clear:hover {
+        background: #444444;
+        color: #ffffff;
+    }
+
+    .import-error {
+        margin: 8px 0 0 0;
+        padding: 8px 12px;
+        background: #3a2a2a;
+        border: 1px solid #5a3a3a;
+        border-radius: 4px;
+        color: #ff8888;
+        font-size: 13px;
     }
 </style>
