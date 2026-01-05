@@ -5,6 +5,7 @@ export interface HistoryState {
   description: string;
   rowOffsets: number[];
   config?: Partial<ProjectConfig>;
+  category?: "manual" | "solver";
 }
 
 const HISTORY_KEY_PREFIX = "floorboard_history_";
@@ -22,7 +23,7 @@ export class HistoryManager {
     }
   }
 
-  push(description: string, rowOffsets: number[], config?: Partial<ProjectConfig>): void {
+  push(description: string, rowOffsets: number[], config?: Partial<ProjectConfig>, category?: "manual" | "solver"): void {
     if (this.currentIndex < this.states.length - 1) {
       this.states = this.states.slice(0, this.currentIndex + 1);
     }
@@ -32,6 +33,7 @@ export class HistoryManager {
       description,
       rowOffsets: [...rowOffsets],
       config,
+      category,
     };
 
     this.states.push(state);

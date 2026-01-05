@@ -25,3 +25,4 @@ solver/target
 *.njsproj
 *.sln
 *.sw?
+target/rust-analyzer/

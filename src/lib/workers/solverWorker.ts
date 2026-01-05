@@ -1,6 +1,7 @@
 import init, { Solver } from "../solver/pkg/floorboard_solver";
 
 let solver: Solver | null = null;
+let stopRequested = false;
 
 interface InitMessage {
   type: "init";
@@ -10,6 +11,7 @@ interface InitMessage {
     room_height: number;
     saw_kerf: number;
     min_cut_length: number;
+    max_unique_cuts: number | null;
   };
   weights: {
     cutting_simplicity: number;
@@ -34,7 +36,88 @@ interface ScoreMessage {
   layout: { row_offsets: number[] };
 }
 
-type WorkerMessage = InitMessage | GenerateMessage | OptimizeMessage | ScoreMessage;
+interface StartSearchMessage {
+  type: "startSearch";
+  currentLayout: { row_offsets: number[] };
+}
+
+interface StopSearchMessage {
+  type: "stopSearch";
+}
+
+type WorkerMessage =
+  | InitMessage
+  | GenerateMessage
+  | OptimizeMessage
+  | ScoreMessage
+  | StartSearchMessage
+  | StopSearchMessage;
+
+interface ScoredLayout {
+  layout: { row_offsets: number[] };
+  total_score: number;
+}
+
+async function runSearch(currentLayout: { row_offsets: number[] }) {
+  if (!solver) {
+    self.postMessage({ type: "error", message: "Solver not initialized" });
+    return;
+  }
+
+  try {
+    stopRequested = false;
+    console.log("[Worker] Scoring initial layout...");
+    let best: ScoredLayout = solver.score_layout(currentLayout) as ScoredLayout;
+    console.log("[Worker] Initial score:", best.total_score);
+    let noImprovementCount = 0;
+    let iteration = 0;
+    const MAX_NO_IMPROVEMENT = 5_000_000;
+
+    self.postMessage({
+      type: "progress",
+      iteration: 0,
+      bestScore: best.total_score,
+    });
+
+    while (!stopRequested && noImprovementCount < MAX_NO_IMPROVEMENT) {
+      const candidate = solver.generate_and_score() as ScoredLayout;
+      iteration++;
+
+      if (candidate.total_score > best.total_score) {
+        best = candidate;
+        noImprovementCount = 0;
+        self.postMessage({
+          type: "candidate",
+          layout: best.layout,
+          score: best.total_score,
+          iteration,
+        });
+      } else {
+        noImprovementCount++;
+      }
+
+      if (iteration % 1000 === 0) {
+        self.postMessage({
+          type: "progress",
+          iteration,
+          bestScore: best.total_score,
+        });
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    }
+
+    self.postMessage({
+      type: "searchComplete",
+      layout: best.layout,
+      totalIterations: iteration,
+    });
+  } catch (err) {
+    self.postMessage({
+      type: "error",
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
   const { type } = e.data;
@@ -77,6 +160,22 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
       const { layout } = e.data as ScoreMessage;
       const score = solver.score_layout(layout);
       self.postMessage({ type: "score", score });
+      break;
+    }
+
+    case "startSearch": {
+      const { currentLayout } = e.data as StartSearchMessage;
+      console.log(
+        "[Worker] Starting search with",
+        currentLayout.row_offsets.length,
+        "rows",
+      );
+      runSearch(currentLayout);
+      break;
+    }
+
+    case "stopSearch": {
+      stopRequested = true;
       break;
     }
   }

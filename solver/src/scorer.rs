@@ -18,16 +18,16 @@ pub fn score(config: &Config, weights: &OptimizationWeights, layout: &Layout) ->
     let allocation = allocate_material(config, layout);
 
     let waste_score = if allocation.total_material > 0.0 {
-        1.0 - (allocation.waste / allocation.total_material)
+        allocation.total_material / (allocation.total_material + allocation.waste)
     } else {
-        1.0
+        0.5
     };
 
     let total_offcuts = allocation.offcuts_reused + allocation.offcuts_wasted;
     let reuse_score = if total_offcuts > 0 {
-        allocation.offcuts_reused as f64 / total_offcuts as f64
+        (allocation.offcuts_reused as f64 + 1.0) / (total_offcuts as f64 + 1.0)
     } else {
-        1.0
+        0.5
     };
 
     let randomness_score = score_randomness(config, layout);
@@ -157,7 +157,7 @@ fn calculate_requirements(config: &Config, layout: &Layout) -> Vec<CutRequiremen
 fn score_randomness(config: &Config, layout: &Layout) -> f64 {
     let offsets = &layout.row_offsets;
     if offsets.len() < 2 {
-        return 1.0;
+        return 0.5;
     }
 
     let normalized: Vec<f64> = offsets
@@ -170,5 +170,5 @@ fn score_randomness(config: &Config, layout: &Layout) -> f64 {
         normalized.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / normalized.len() as f64;
     let std_dev = variance.sqrt();
 
-    (std_dev * 4.0).min(1.0)
+    std_dev * 4.0
 }

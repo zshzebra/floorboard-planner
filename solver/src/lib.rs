@@ -44,4 +44,10 @@ impl Solver {
         let scored = scorer::score(&self.config, &self.weights, &layout);
         serde_wasm_bindgen::to_value(&scored).unwrap()
     }
+
+    pub fn generate_and_score(&self) -> JsValue {
+        let layout = Layout::random(self.num_rows, self.config.plank_full_length);
+        let scored = scorer::score(&self.config, &self.weights, &layout);
+        serde_wasm_bindgen::to_value(&scored).unwrap()
+    }
 }

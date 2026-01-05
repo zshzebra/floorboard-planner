@@ -29,20 +29,28 @@
     const padding = 50;
     let scale = $derived.by(() => {
         const totalHeight =
-            projectStore.roomDimensions.height + projectStore.boardDimensions.height * 2;
-        const scaleX = (canvasWidth - 2 * padding) / projectStore.roomDimensions.width;
+            projectStore.roomDimensions.height +
+            projectStore.boardDimensions.height * 2;
+        const scaleX =
+            (canvasWidth - 2 * padding) / projectStore.roomDimensions.width;
         const scaleY = (canvasHeight - 2 * padding) / totalHeight;
         return Math.min(scaleX, scaleY);
     });
 
     const mmToPx = (mm: number) => mm * scale;
 
-    let roomX = $derived((canvasWidth - mmToPx(projectStore.roomDimensions.width)) / 2);
+    let roomX = $derived(
+        (canvasWidth - mmToPx(projectStore.roomDimensions.width)) / 2,
+    );
     let totalVisualHeight = $derived(
-        mmToPx(projectStore.roomDimensions.height + projectStore.boardDimensions.height * 2),
+        mmToPx(
+            projectStore.roomDimensions.height +
+                projectStore.boardDimensions.height * 2,
+        ),
     );
     let roomY = $derived(
-        (canvasHeight - totalVisualHeight) / 2 + mmToPx(projectStore.boardDimensions.height),
+        (canvasHeight - totalVisualHeight) / 2 +
+            mmToPx(projectStore.boardDimensions.height),
     );
 
     let minGlobalOffset = $derived(
@@ -121,33 +129,40 @@
         };
     });
 
-    async function handleOptimize() {
-        if (!solverInitialized) return;
+    function toggleSearch() {
+        if (solverStore.isSearching) {
+            solverStore.stopSearch();
+            const offsets = projectStore.config.rowOffsets;
+            historyStore.record("Optimized layout", offsets);
+        } else {
+            const numRows = projectStore.numRows;
+            const existingOffsets = projectStore.config.rowOffsets;
+            const rowOffsets: number[] = [];
+            for (let i = 0; i < numRows; i++) {
+                rowOffsets.push(existingOffsets[i] ?? 0);
+            }
 
-        const numRows = projectStore.numRows;
-        const existingOffsets = projectStore.config.rowOffsets;
-        const rowOffsets: number[] = [];
-        for (let i = 0; i < numRows; i++) {
-            rowOffsets.push(existingOffsets[i] ?? 0);
+            solverStore.startSearch({ row_offsets: rowOffsets }, (layout) => {
+                for (let i = 0; i < layout.row_offsets.length; i++) {
+                    projectStore.setRowOffset(i, layout.row_offsets[i]);
+                }
+            });
         }
-
-        const currentLayout = { row_offsets: rowOffsets };
-        const optimized = await solverStore.optimize(currentLayout, 10000);
-
-        const newOffsets = optimized.row_offsets;
-        for (let i = 0; i < newOffsets.length; i++) {
-            projectStore.setRowOffset(i, newOffsets[i]);
-        }
-        historyStore.record("Optimize layout", newOffsets);
     }
 
-    function updateWeight(key: keyof typeof projectStore.config.optimizationWeights, value: number) {
-        projectStore.updateConfig({
-            optimizationWeights: {
-                ...projectStore.config.optimizationWeights,
-                [key]: value,
+    function updateWeight(
+        key: keyof typeof projectStore.config.optimizationWeights,
+        value: number,
+    ) {
+        projectStore.updateConfig(
+            {
+                optimizationWeights: {
+                    ...projectStore.config.optimizationWeights,
+                    [key]: value,
+                },
             },
-        }, false);
+            false,
+        );
     }
 </script>
 
@@ -186,42 +201,66 @@
             <div class="slider-group">
                 <label>
                     <span>Cutting Simplicity</span>
-                    <span class="slider-value">{projectStore.config.optimizationWeights.cuttingSimplicity}</span>
+                    <span class="slider-value"
+                        >{projectStore.config.optimizationWeights
+                            .cuttingSimplicity}</span
+                    >
                 </label>
                 <input
                     type="range"
                     min="0"
                     max="100"
-                    value={projectStore.config.optimizationWeights.cuttingSimplicity}
-                    oninput={(e) => updateWeight("cuttingSimplicity", parseInt((e.target as HTMLInputElement).value))}
+                    value={projectStore.config.optimizationWeights
+                        .cuttingSimplicity}
+                    oninput={(e) =>
+                        updateWeight(
+                            "cuttingSimplicity",
+                            parseInt((e.target as HTMLInputElement).value),
+                        )}
                 />
             </div>
 
             <div class="slider-group">
                 <label>
                     <span>Waste Minimization</span>
-                    <span class="slider-value">{projectStore.config.optimizationWeights.wasteMinimization}</span>
+                    <span class="slider-value"
+                        >{projectStore.config.optimizationWeights
+                            .wasteMinimization}</span
+                    >
                 </label>
                 <input
                     type="range"
                     min="0"
                     max="100"
-                    value={projectStore.config.optimizationWeights.wasteMinimization}
-                    oninput={(e) => updateWeight("wasteMinimization", parseInt((e.target as HTMLInputElement).value))}
+                    value={projectStore.config.optimizationWeights
+                        .wasteMinimization}
+                    oninput={(e) =>
+                        updateWeight(
+                            "wasteMinimization",
+                            parseInt((e.target as HTMLInputElement).value),
+                        )}
                 />
             </div>
 
             <div class="slider-group">
                 <label>
                     <span>Visual Randomness</span>
-                    <span class="slider-value">{projectStore.config.optimizationWeights.visualRandomness}</span>
+                    <span class="slider-value"
+                        >{projectStore.config.optimizationWeights
+                            .visualRandomness}</span
+                    >
                 </label>
                 <input
                     type="range"
                     min="0"
                     max="100"
-                    value={projectStore.config.optimizationWeights.visualRandomness}
-                    oninput={(e) => updateWeight("visualRandomness", parseInt((e.target as HTMLInputElement).value))}
+                    value={projectStore.config.optimizationWeights
+                        .visualRandomness}
+                    oninput={(e) =>
+                        updateWeight(
+                            "visualRandomness",
+                            parseInt((e.target as HTMLInputElement).value),
+                        )}
                 />
             </div>
 
@@ -229,7 +268,9 @@
                 <label>
                     <span>Max Unique Cuts</span>
                     <span class="slider-value">
-                        {projectStore.config.maxUniqueCuts === null ? "Unlimited" : projectStore.config.maxUniqueCuts}
+                        {projectStore.config.maxUniqueCuts === null
+                            ? "Unlimited"
+                            : projectStore.config.maxUniqueCuts}
                     </span>
                 </label>
                 <input
@@ -238,26 +279,42 @@
                     max={projectStore.numRows * 2}
                     value={projectStore.config.maxUniqueCuts ?? 0}
                     oninput={(e) => {
-                        const val = parseInt((e.target as HTMLInputElement).value);
-                        projectStore.updateConfig({ maxUniqueCuts: val === 0 ? null : val }, false);
+                        const val = parseInt(
+                            (e.target as HTMLInputElement).value,
+                        );
+                        projectStore.updateConfig(
+                            { maxUniqueCuts: val === 0 ? null : val },
+                            false,
+                        );
                     }}
                 />
-                <span class="slider-hint">Current: {cutList.uniqueCuts} unique cuts</span>
+                <span class="slider-hint"
+                    >Current: {cutList.uniqueCuts} unique cuts</span
+                >
             </div>
 
             <button
                 class="btn-optimize"
-                onclick={handleOptimize}
-                disabled={!solverInitialized || solverStore.isProcessing}
+                onclick={toggleSearch}
+                disabled={!solverInitialized}
             >
-                {#if solverStore.isProcessing}
-                    Optimizing...
+                {#if solverStore.isSearching}
+                    Stop Search
                 {:else if !solverInitialized}
                     Loading Solver...
                 {:else}
-                    Optimize Layout
+                    Start Search
                 {/if}
             </button>
+
+            {#if solverStore.isSearching || solverStore.bestScore !== null}
+                <div class="search-status">
+                    <span>Iteration: {solverStore.currentIteration.toLocaleString()}</span>
+                    {#if solverStore.bestScore !== null}
+                        <span>Score: {solverStore.bestScore.toFixed(3)}</span>
+                    {/if}
+                </div>
+            {/if}
 
             {#if solverError}
                 <p class="solver-error">{solverError}</p>
@@ -269,11 +326,13 @@
             <div class="info-grid">
                 <span class="info-label">Plank:</span>
                 <span class="info-value">
-                    {projectStore.config.plankFullLength} x {projectStore.config.plankWidth} mm
+                    {projectStore.config.plankFullLength} x {projectStore.config
+                        .plankWidth} mm
                 </span>
                 <span class="info-label">Room:</span>
                 <span class="info-value">
-                    {projectStore.roomDimensions.width} x {projectStore.roomDimensions.height} mm
+                    {projectStore.roomDimensions.width} x {projectStore
+                        .roomDimensions.height} mm
                 </span>
                 <span class="info-label">Rows:</span>
                 <span class="info-value">{projectStore.numRows}</span>
@@ -313,7 +372,8 @@
                         {globalOffset}
                         {woodTexture}
                         rowOffset={projectStore.getRowOffset(rowIndex)}
-                        onUpdateRowOffset={(offset) => updateRowOffset(rowIndex, offset)}
+                        onUpdateRowOffset={(offset) =>
+                            updateRowOffset(rowIndex, offset)}
                         onDragEnd={() => handleRowDragEnd(rowIndex)}
                     />
                 {/each}
@@ -511,5 +571,16 @@
         border-radius: 4px;
         color: #ff8888;
         font-size: 13px;
+    }
+
+    .search-status {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 8px;
+        padding: 8px 12px;
+        background: #333333;
+        border-radius: 4px;
+        font-size: 12px;
+        color: #aaaaaa;
     }
 </style>

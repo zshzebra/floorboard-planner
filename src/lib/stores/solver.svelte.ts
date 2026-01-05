@@ -12,13 +12,19 @@ interface Layout {
   row_offsets: number[];
 }
 
+type CandidateCallback = (layout: Layout, score: number, iteration: number) => void;
+
 class SolverStore {
   private worker: Worker | null = null;
   private pendingResolve: ((value: unknown) => void) | null = null;
+  private candidateCallback: CandidateCallback | null = null;
 
   isReady = $state(false);
   isProcessing = $state(false);
+  isSearching = $state(false);
   currentScore = $state<ScoredLayout | null>(null);
+  currentIteration = $state(0);
+  bestScore = $state<number | null>(null);
 
   async init(config: ProjectConfig, numRows: number): Promise<void> {
     this.dispose();
@@ -48,14 +54,31 @@ class SolverStore {
             this.pendingResolve(e.data);
             this.pendingResolve = null;
           }
+        } else if (type === "candidate") {
+          this.bestScore = e.data.score;
+          this.currentIteration = e.data.iteration;
+          if (this.candidateCallback) {
+            this.candidateCallback(e.data.layout, e.data.score, e.data.iteration);
+          }
+        } else if (type === "progress") {
+          this.currentIteration = e.data.iteration;
+          this.bestScore = e.data.bestScore;
+        } else if (type === "searchComplete") {
+          this.isSearching = false;
+          this.candidateCallback = null;
         } else if (type === "error") {
           this.isProcessing = false;
-          reject(new Error(e.data.message));
+          this.isSearching = false;
+          console.error("Solver error:", e.data.message);
+          if (this.pendingResolve) {
+            reject(new Error(e.data.message));
+          }
         }
       };
 
       this.worker.onerror = (err) => {
         this.isProcessing = false;
+        this.isSearching = false;
         reject(err);
       };
 
@@ -136,6 +159,26 @@ class SolverStore {
     });
   }
 
+  startSearch(layout: Layout, onCandidate: CandidateCallback): void {
+    if (!this.worker || !this.isReady) {
+      throw new Error("Solver not initialized");
+    }
+
+    this.isSearching = true;
+    this.currentIteration = 0;
+    this.bestScore = null;
+    this.candidateCallback = onCandidate;
+    this.worker.postMessage({
+      type: "startSearch",
+      currentLayout: { row_offsets: [...layout.row_offsets] },
+    });
+  }
+
+  stopSearch(): void {
+    if (!this.worker) return;
+    this.worker.postMessage({ type: "stopSearch" });
+  }
+
   dispose(): void {
     if (this.worker) {
       this.worker.terminate();
@@ -143,8 +186,12 @@ class SolverStore {
     }
     this.isReady = false;
     this.isProcessing = false;
+    this.isSearching = false;
     this.currentScore = null;
     this.pendingResolve = null;
+    this.candidateCallback = null;
+    this.currentIteration = 0;
+    this.bestScore = null;
   }
 }
 
