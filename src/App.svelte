@@ -2,14 +2,11 @@
     import { Layer, Stage, Rect } from "svelte-konva";
     import "./app.css";
     import FloorboardRow from "./lib/drawing/FloorboardRow.svelte";
+    import ProjectSettings from "./lib/components/ProjectSettings.svelte";
+    import { projectStore } from "./lib/stores/project.svelte";
 
-    // Configuration in mm
-    let roomDimensions = { width: 5000, height: 4000 };
-    let boardDimensions = { width: 200, height: 1200 };
-    let visualGap = 2; // mm
-    let globalOffset = $state(0); // horizontal shift of entire layout
+    let globalOffset = $state(0);
 
-    // Load wood texture
     let woodTexture = $state<HTMLImageElement | null>(null);
     $effect(() => {
         const img = new Image();
@@ -19,59 +16,34 @@
         img.src = "/wood.png";
     });
 
-    // Calculate number of rows
-    let numRows = $derived(
-        Math.ceil(roomDimensions.width / boardDimensions.width),
-    );
-
-    // Initialize row offsets (each row can be independently offset vertically)
-    let rowOffsets = $state<Record<number, number>>({});
-
-    // Ensure all rows have an offset initialized
-    $effect(() => {
-        for (let i = 0; i < numRows; i++) {
-            if (rowOffsets[i] === undefined) {
-                rowOffsets[i] = 0;
-            }
-        }
-    });
-
-    // Canvas dimensions - will be set from container
     let canvasWidth = $state(0);
     let canvasHeight = $state(0);
     let canvasContainer: HTMLDivElement;
 
-    // Calculate scale factor to fit everything on screen with padding
-    // Account for overflowing floorboards (one board length can extend beyond room on EITHER top or bottom)
-    const padding = 50; // px
+    const padding = 50;
     let scale = $derived.by(() => {
-        const totalHeight = roomDimensions.height + boardDimensions.height * 2; // Room + possible overflow on top + possible overflow on bottom
-        const scaleX = (canvasWidth - 2 * padding) / roomDimensions.width;
+        const totalHeight =
+            projectStore.roomDimensions.height + projectStore.boardDimensions.height * 2;
+        const scaleX = (canvasWidth - 2 * padding) / projectStore.roomDimensions.width;
         const scaleY = (canvasHeight - 2 * padding) / totalHeight;
         return Math.min(scaleX, scaleY);
     });
 
-    // Convert mm to px
     const mmToPx = (mm: number) => mm * scale;
 
-    // Room position (centered on canvas, accounting for overflow space on both sides)
-    let roomX = $derived((canvasWidth - mmToPx(roomDimensions.width)) / 2);
-    // Total visual height includes room + overflow space on both sides
-    // Center this total height, which automatically accounts for overflow
+    let roomX = $derived((canvasWidth - mmToPx(projectStore.roomDimensions.width)) / 2);
     let totalVisualHeight = $derived(
-        mmToPx(roomDimensions.height + boardDimensions.height * 2),
+        mmToPx(projectStore.roomDimensions.height + projectStore.boardDimensions.height * 2),
     );
     let roomY = $derived(
-        (canvasHeight - totalVisualHeight) / 2 + mmToPx(boardDimensions.height),
+        (canvasHeight - totalVisualHeight) / 2 + mmToPx(projectStore.boardDimensions.height),
     );
 
-    // Calculate constraints for global offset
-    // The leftmost board should not go past the left edge of the room
-    // The rightmost board should not go past the right edge of the room
-    let minGlobalOffset = $derived(-(numRows - 1) * boardDimensions.width);
+    let minGlobalOffset = $derived(
+        -(projectStore.numRows - 1) * projectStore.boardDimensions.width,
+    );
     let maxGlobalOffset = $derived(0);
 
-    // Update canvas size from container
     function updateCanvasSize() {
         if (canvasContainer) {
             canvasWidth = canvasContainer.clientWidth;
@@ -79,47 +51,54 @@
         }
     }
 
-    // Initialize canvas size and handle window resize
     $effect(() => {
         updateCanvasSize();
         window.addEventListener("resize", updateCanvasSize);
         return () => window.removeEventListener("resize", updateCanvasSize);
     });
 
-    // Update row offset
     function updateRowOffset(index: number, offset: number) {
-        rowOffsets = { ...rowOffsets, [index]: offset };
+        projectStore.setRowOffset(index, offset);
     }
 
-    // Update global offset with constraints
     function updateGlobalOffset(newOffset: number) {
-        globalOffset = Math.max(
-            minGlobalOffset,
-            Math.min(maxGlobalOffset, newOffset),
-        );
+        globalOffset = Math.max(minGlobalOffset, Math.min(maxGlobalOffset, newOffset));
     }
 
-    // Randomize all row offsets
-    function randomizeOffsets() {
-        const newOffsets: Record<number, number> = {};
-        for (let i = 0; i < numRows; i++) {
-            // Random offset between 0 and -boardHeight
-            newOffsets[i] = -Math.random() * boardDimensions.height;
-        }
-        rowOffsets = newOffsets;
+    function handleRandomizeOffsets() {
+        projectStore.randomizeOffsets();
     }
 </script>
 
 <div class="app-container">
-    <!-- Sidebar -->
     <div class="sidebar">
         <h2>Floorboard Planner</h2>
 
+        <ProjectSettings />
+
         <div class="section">
             <h3>Layout Controls</h3>
-            <button class="btn-primary" onclick={randomizeOffsets}>
+            <button class="btn-primary" onclick={handleRandomizeOffsets}>
                 Randomize Offsets
             </button>
+        </div>
+
+        <div class="section">
+            <h3>Project Info</h3>
+            <div class="info-grid">
+                <span class="info-label">Plank:</span>
+                <span class="info-value">
+                    {projectStore.config.plankFullLength} x {projectStore.config.plankWidth} mm
+                </span>
+                <span class="info-label">Room:</span>
+                <span class="info-value">
+                    {projectStore.roomDimensions.width} x {projectStore.roomDimensions.height} mm
+                </span>
+                <span class="info-label">Rows:</span>
+                <span class="info-value">{projectStore.numRows}</span>
+                <span class="info-label">Saw Kerf:</span>
+                <span class="info-value">{projectStore.config.sawKerf} mm</span>
+            </div>
         </div>
 
         <div class="section">
@@ -128,36 +107,32 @@
         </div>
     </div>
 
-    <!-- Canvas -->
     <div class="canvas-container" bind:this={canvasContainer}>
         <Stage width={canvasWidth} height={canvasHeight}>
             <Layer>
-                <!-- Room outline (centered, dashed) -->
                 <Rect
                     x={roomX}
                     y={roomY}
-                    width={mmToPx(roomDimensions.width)}
-                    height={mmToPx(roomDimensions.height)}
+                    width={mmToPx(projectStore.roomDimensions.width)}
+                    height={mmToPx(projectStore.roomDimensions.height)}
                     stroke="#cccccc"
                     strokeWidth={2}
                     dash={[10, 5]}
                 />
 
-                <!-- Render each row of floorboards -->
-                {#each Array(numRows) as _, rowIndex}
+                {#each Array(projectStore.numRows) as _, rowIndex}
                     <FloorboardRow
                         {rowIndex}
                         {roomX}
                         {roomY}
-                        {boardDimensions}
-                        {roomDimensions}
-                        {visualGap}
+                        boardDimensions={projectStore.boardDimensions}
+                        roomDimensions={projectStore.roomDimensions}
+                        visualGap={projectStore.config.visualGap}
                         {scale}
                         {globalOffset}
                         {woodTexture}
-                        rowOffset={rowOffsets[rowIndex] ?? 0}
-                        onUpdateRowOffset={(offset) =>
-                            updateRowOffset(rowIndex, offset)}
+                        rowOffset={projectStore.getRowOffset(rowIndex)}
+                        onUpdateRowOffset={(offset) => updateRowOffset(rowIndex, offset)}
                     />
                 {/each}
             </Layer>
@@ -223,6 +198,21 @@
 
     .btn-primary:active {
         background: #7a5f3a;
+    }
+
+    .info-grid {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 6px 12px;
+        font-size: 13px;
+    }
+
+    .info-label {
+        color: #888888;
+    }
+
+    .info-value {
+        color: #ffffff;
     }
 
     .placeholder {
