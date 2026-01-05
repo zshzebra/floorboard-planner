@@ -1,5 +1,6 @@
 import { type ProjectConfig, createProject, getRoomBounds } from "../types/project";
 import { ProjectStorage } from "../storage/projectStorage";
+import { historyStore } from "./history.svelte";
 
 class ProjectStore {
   config = $state<ProjectConfig>(createProject());
@@ -22,10 +23,13 @@ class ProjectStore {
       const saved = ProjectStorage.loadProject(lastId);
       if (saved) {
         this.config = saved;
+        historyStore.setProject(saved.id);
         return;
       }
     }
     this.config = createProject();
+    historyStore.setProject(this.config.id);
+    historyStore.record("Initial layout", this.config.rowOffsets);
   }
 
   save() {
@@ -39,26 +43,39 @@ class ProjectStore {
     if (project) {
       this.config = project;
       ProjectStorage.setCurrentProject(id);
+      historyStore.setProject(id);
       this.isDirty = false;
     }
   }
 
   newProject() {
     this.config = createProject();
+    historyStore.setProject(this.config.id);
+    historyStore.record("New project", this.config.rowOffsets);
     this.isDirty = true;
   }
 
-  updateConfig(updates: Partial<ProjectConfig>) {
+  updateConfig(updates: Partial<ProjectConfig>, recordHistory = true) {
     this.config = { ...this.config, ...updates, modified: Date.now() };
     this.isDirty = true;
+    if (recordHistory) {
+      historyStore.record("Settings changed", this.config.rowOffsets, updates);
+    }
   }
 
-  setRowOffset(index: number, offset: number) {
+  setRowOffset(index: number, offset: number, recordHistory = false) {
     const offsets = [...this.config.rowOffsets];
     while (offsets.length <= index) offsets.push(0);
     offsets[index] = offset;
     this.config = { ...this.config, rowOffsets: offsets, modified: Date.now() };
     this.isDirty = true;
+    if (recordHistory) {
+      historyStore.record(`Adjusted row ${index + 1}`, offsets);
+    }
+  }
+
+  recordRowDrag(index: number) {
+    historyStore.record(`Adjusted row ${index + 1}`, this.config.rowOffsets);
   }
 
   getRowOffset(index: number): number {
@@ -72,6 +89,30 @@ class ProjectStore {
     }
     this.config = { ...this.config, rowOffsets: offsets, modified: Date.now() };
     this.isDirty = true;
+    historyStore.record("Randomize offsets", offsets);
+  }
+
+  applyHistoryState(state: { rowOffsets: number[]; config?: Partial<ProjectConfig> }) {
+    let newConfig = { ...this.config, rowOffsets: state.rowOffsets, modified: Date.now() };
+    if (state.config) {
+      newConfig = { ...newConfig, ...state.config };
+    }
+    this.config = newConfig;
+    this.isDirty = true;
+  }
+
+  undo() {
+    const state = historyStore.undo();
+    if (state) {
+      this.applyHistoryState(state);
+    }
+  }
+
+  redo() {
+    const state = historyStore.redo();
+    if (state) {
+      this.applyHistoryState(state);
+    }
   }
 }
 

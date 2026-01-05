@@ -14,6 +14,7 @@
         rowOffset: number;
         woodTexture: HTMLImageElement | null;
         onUpdateRowOffset: (offset: number) => void;
+        onDragEnd?: () => void;
     }
 
     let {
@@ -28,6 +29,7 @@
         rowOffset,
         woodTexture,
         onUpdateRowOffset,
+        onDragEnd,
     }: Props = $props();
 
     // Convert mm to px
@@ -110,6 +112,7 @@
     function handleDragEnd(e: any) {
         const group = e.target;
         group.y(0);
+        onDragEnd?.();
     }
 </script>
 

@@ -4,6 +4,7 @@
     import FloorboardRow from "./lib/drawing/FloorboardRow.svelte";
     import ProjectSettings from "./lib/components/ProjectSettings.svelte";
     import { projectStore } from "./lib/stores/project.svelte";
+    import { historyStore } from "./lib/stores/history.svelte";
 
     let globalOffset = $state(0);
 
@@ -57,12 +58,32 @@
         return () => window.removeEventListener("resize", updateCanvasSize);
     });
 
+    $effect(() => {
+        function handleKeydown(e: KeyboardEvent) {
+            if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+                if (e.shiftKey) {
+                    e.preventDefault();
+                    projectStore.redo();
+                } else {
+                    e.preventDefault();
+                    projectStore.undo();
+                }
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === "y") {
+                e.preventDefault();
+                projectStore.redo();
+            }
+        }
+        window.addEventListener("keydown", handleKeydown);
+        return () => window.removeEventListener("keydown", handleKeydown);
+    });
+
     function updateRowOffset(index: number, offset: number) {
         projectStore.setRowOffset(index, offset);
     }
 
-    function updateGlobalOffset(newOffset: number) {
-        globalOffset = Math.max(minGlobalOffset, Math.min(maxGlobalOffset, newOffset));
+    function handleRowDragEnd(index: number) {
+        projectStore.recordRowDrag(index);
     }
 
     function handleRandomizeOffsets() {
@@ -81,6 +102,22 @@
             <button class="btn-primary" onclick={handleRandomizeOffsets}>
                 Randomize Offsets
             </button>
+            <div class="undo-redo-row">
+                <button
+                    class="btn-secondary"
+                    onclick={() => projectStore.undo()}
+                    disabled={!historyStore.canUndo}
+                >
+                    Undo
+                </button>
+                <button
+                    class="btn-secondary"
+                    onclick={() => projectStore.redo()}
+                    disabled={!historyStore.canRedo}
+                >
+                    Redo
+                </button>
+            </div>
         </div>
 
         <div class="section">
@@ -133,6 +170,7 @@
                         {woodTexture}
                         rowOffset={projectStore.getRowOffset(rowIndex)}
                         onUpdateRowOffset={(offset) => updateRowOffset(rowIndex, offset)}
+                        onDragEnd={() => handleRowDragEnd(rowIndex)}
                     />
                 {/each}
             </Layer>
@@ -198,6 +236,33 @@
 
     .btn-primary:active {
         background: #7a5f3a;
+    }
+
+    .undo-redo-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+    }
+
+    .btn-secondary {
+        flex: 1;
+        padding: 8px 12px;
+        background: #444444;
+        color: #ffffff;
+        border: none;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+        background: #555555;
+    }
+
+    .btn-secondary:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
     }
 
     .info-grid {
