@@ -13,10 +13,16 @@ interface Layout {
   row_offsets: number[];
 }
 
-type CandidateCallback = (layout: Layout, score: number, iteration: number) => void;
+type CandidateCallback = (
+  layout: Layout,
+  score: number,
+  iteration: number,
+) => void;
 
 const BATCH_SIZE = 1000;
 const MAX_NO_IMPROVEMENT = 5_000_000;
+
+let threadPoolInitialized = false;
 
 class SolverStore {
   private solver: Solver | null = null;
@@ -30,13 +36,26 @@ class SolverStore {
   bestScore = $state<number | null>(null);
 
   async init(config: ProjectConfig, numRows: number): Promise<void> {
+    console.log(
+      "Initializing solver with weights:",
+      config.optimizationWeights,
+    );
+
     this.dispose();
 
     const roomHeight = this.getRoomHeight(config);
 
     await init();
-    await initThreadPool(navigator.hardwareConcurrency);
 
+    // Only initialize thread pool once
+    if (!threadPoolInitialized) {
+      console.log("Initializing thread pool...");
+      await initThreadPool(navigator.hardwareConcurrency);
+      threadPoolInitialized = true;
+      console.log("Thread pool initialized");
+    }
+
+    console.log("Creating new Solver instance...");
     this.solver = new Solver(
       {
         plank_full_length: config.plankFullLength,
@@ -51,9 +70,10 @@ class SolverStore {
         waste_minimization: config.optimizationWeights.wasteMinimization / 100,
         visual_randomness: config.optimizationWeights.visualRandomness / 100,
       },
-      numRows
+      numRows,
     );
 
+    console.log("Solver created successfully");
     this.isReady = true;
   }
 
@@ -74,14 +94,19 @@ class SolverStore {
     if (!this.solver || !this.isReady) {
       throw new Error("Solver not initialized");
     }
-    return this.solver.optimize({ row_offsets: [...layout.row_offsets] }, maxIterations) as Layout;
+    return this.solver.optimize(
+      { row_offsets: [...layout.row_offsets] },
+      maxIterations,
+    ) as Layout;
   }
 
   scoreLayout(layout: Layout): ScoredLayout {
     if (!this.solver || !this.isReady) {
       throw new Error("Solver not initialized");
     }
-    const scored = this.solver.score_layout({ row_offsets: [...layout.row_offsets] }) as ScoredLayout;
+    const scored = this.solver.score_layout({
+      row_offsets: [...layout.row_offsets],
+    }) as ScoredLayout;
     this.currentScore = scored;
     return scored;
   }
@@ -106,7 +131,9 @@ class SolverStore {
         return;
       }
 
-      const candidate = this.solver!.generate_batch_best(BATCH_SIZE) as ScoredLayout;
+      const candidate = this.solver!.generate_batch_best(
+        BATCH_SIZE,
+      ) as ScoredLayout;
       iteration += BATCH_SIZE;
 
       if (candidate.total_score > best.total_score) {
