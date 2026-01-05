@@ -1,4 +1,5 @@
-use rand::Rng;
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -17,7 +18,7 @@ pub struct ScoredLayout {
 
 impl Layout {
     pub fn random(num_rows: usize, plank_length: f64) -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = SmallRng::from_entropy();
         let row_offsets: Vec<f64> = (0..num_rows)
             .map(|_| -rng.gen::<f64>() * plank_length)
             .collect();
@@ -30,7 +31,7 @@ impl Layout {
             return self.clone();
         }
 
-        let mut rng = rand::thread_rng();
+        let mut rng = SmallRng::from_entropy();
         let mut new_offsets = self.row_offsets.clone();
 
         let idx = rng.gen_range(0..new_offsets.len());

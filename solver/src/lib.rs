@@ -5,7 +5,10 @@ mod scorer;
 
 use config::{Config, OptimizationWeights};
 use layout::Layout;
+use rayon::prelude::*;
 use wasm_bindgen::prelude::*;
+
+pub use wasm_bindgen_rayon::init_thread_pool;
 
 #[wasm_bindgen]
 pub struct Solver {
@@ -49,5 +52,18 @@ impl Solver {
         let layout = Layout::random(self.num_rows, self.config.plank_full_length);
         let scored = scorer::score(&self.config, &self.weights, &layout);
         serde_wasm_bindgen::to_value(&scored).unwrap()
+    }
+
+    pub fn generate_batch_best(&self, batch_size: usize) -> JsValue {
+        let best = (0..batch_size)
+            .into_par_iter()
+            .map(|_| {
+                let layout = Layout::random(self.num_rows, self.config.plank_full_length);
+                scorer::score(&self.config, &self.weights, &layout)
+            })
+            .max_by(|a, b| a.total_score.partial_cmp(&b.total_score).unwrap())
+            .unwrap();
+
+        serde_wasm_bindgen::to_value(&best).unwrap()
     }
 }

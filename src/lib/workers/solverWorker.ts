@@ -1,4 +1,4 @@
-import init, { Solver } from "../solver/pkg/floorboard_solver";
+import init, { initThreadPool, Solver } from "../solver/pkg/floorboard_solver";
 
 let solver: Solver | null = null;
 let stopRequested = false;
@@ -70,6 +70,7 @@ async function runSearch(currentLayout: { row_offsets: number[] }) {
     let noImprovementCount = 0;
     let iteration = 0;
     const MAX_NO_IMPROVEMENT = 5_000_000;
+    const BATCH_SIZE = 1000;
 
     self.postMessage({
       type: "progress",
@@ -78,8 +79,8 @@ async function runSearch(currentLayout: { row_offsets: number[] }) {
     });
 
     while (!stopRequested && noImprovementCount < MAX_NO_IMPROVEMENT) {
-      const candidate = solver.generate_and_score() as ScoredLayout;
-      iteration++;
+      const candidate = solver.generate_batch_best(BATCH_SIZE) as ScoredLayout;
+      iteration += BATCH_SIZE;
 
       if (candidate.total_score > best.total_score) {
         best = candidate;
@@ -91,17 +92,15 @@ async function runSearch(currentLayout: { row_offsets: number[] }) {
           iteration,
         });
       } else {
-        noImprovementCount++;
+        noImprovementCount += BATCH_SIZE;
       }
 
-      if (iteration % 1000 === 0) {
-        self.postMessage({
-          type: "progress",
-          iteration,
-          bestScore: best.total_score,
-        });
-        await new Promise((r) => setTimeout(r, 0));
-      }
+      self.postMessage({
+        type: "progress",
+        iteration,
+        bestScore: best.total_score,
+      });
+      await new Promise((r) => setTimeout(r, 0));
     }
 
     self.postMessage({
@@ -124,6 +123,7 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
     case "init": {
       const { config, weights, numRows } = e.data as InitMessage;
       await init();
+      await initThreadPool(navigator.hardwareConcurrency);
       solver = new Solver(config, weights, numRows);
       self.postMessage({ type: "ready" });
       break;
