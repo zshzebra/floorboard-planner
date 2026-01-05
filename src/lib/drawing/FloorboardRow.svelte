@@ -151,6 +151,7 @@
                 {woodTexture}
                 {rowIndex}
                 {boardIndex}
+                textureYOffset={board.yStart < 0 ? Math.abs(board.yStart) : 0}
             />
         {/if}
 

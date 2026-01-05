@@ -16,7 +16,7 @@
         img.onload = () => {
             woodTexture = img;
         };
-        img.src = "/wood.jpg";
+        img.src = "/wood.png";
     });
 
     // Calculate number of rows

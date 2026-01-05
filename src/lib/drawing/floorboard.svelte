@@ -11,6 +11,7 @@
         woodTexture: HTMLImageElement | null;
         rowIndex: number;
         boardIndex: number;
+        textureYOffset?: number; // Offset in mm to simulate "pushing" the board
     }
 
     let {
@@ -23,6 +24,7 @@
         woodTexture,
         rowIndex,
         boardIndex,
+        textureYOffset = 0,
     }: Props = $props();
 
     // Deterministic random number generator (Mulberry32)
@@ -68,9 +70,22 @@
     let fillPatternOffsetX = $derived(
         woodTexture && !isOffcut ? woodTexture.width * textureOffsetX : 0,
     );
-    let fillPatternOffsetY = $derived(
-        woodTexture && !isOffcut ? woodTexture.height * textureOffsetY : 0,
-    );
+    let fillPatternOffsetY = $derived.by(() => {
+        if (!woodTexture || isOffcut) return 0;
+
+        // Base random offset
+        let offset = woodTexture.height * textureOffsetY;
+
+        // Add the "push" offset to simulate board continuing from above
+        // textureYOffset is in mm, scale it to match the texture scale (0.4)
+        if (textureYOffset !== 0) {
+            // The texture is scaled by 0.4, so we need to account for that
+            // Positive offset moves texture down (simulating board pushed down from above)
+            offset += textureYOffset * 0.4;
+        }
+
+        return offset;
+    });
 </script>
 
 {#if !isOffcut && woodTexture}
@@ -82,6 +97,7 @@
         {height}
         fillPatternImage={woodTexture}
         fillPatternRepeat="repeat"
+        fillPatternScale={{ x: 0.4, y: 0.4 }}
         {fillPatternOffsetX}
         {fillPatternOffsetY}
         {stroke}
