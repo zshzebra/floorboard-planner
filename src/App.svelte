@@ -3,8 +3,10 @@
     import "./app.css";
     import FloorboardRow from "./lib/drawing/FloorboardRow.svelte";
     import ProjectSettings from "./lib/components/ProjectSettings.svelte";
+    import CutListPanel from "./lib/components/CutListPanel.svelte";
     import { projectStore } from "./lib/stores/project.svelte";
     import { historyStore } from "./lib/stores/history.svelte";
+    import { CutAnalyzer, type CutList } from "./lib/analysis/cutAnalyzer";
 
     let globalOffset = $state(0);
 
@@ -89,6 +91,11 @@
     function handleRandomizeOffsets() {
         projectStore.randomizeOffsets();
     }
+
+    let cutList = $derived.by(() => {
+        const analyzer = new CutAnalyzer(projectStore.config);
+        return analyzer.analyze();
+    });
 </script>
 
 <div class="app-container">
@@ -139,8 +146,8 @@
         </div>
 
         <div class="section">
-            <h3>Offcuts</h3>
-            <p class="placeholder">Offcut list will appear here</p>
+            <h3>Cut List</h3>
+            <CutListPanel {cutList} />
         </div>
     </div>
 
@@ -278,12 +285,6 @@
 
     .info-value {
         color: #ffffff;
-    }
-
-    .placeholder {
-        color: #888888;
-        font-size: 14px;
-        font-style: italic;
     }
 
     .canvas-container {
