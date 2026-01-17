@@ -1,10 +1,41 @@
 import type { CutList } from "../analysis/cutAnalyzer";
 
+interface CutRow {
+  length: number;
+  count?: number;
+  isPlankSeparator?: boolean;
+}
+
 export interface CutListSVGOptions {
   cutList: CutList;
   plankFullLength: number;
   woodTexture: HTMLImageElement | null;
   includePageBreakMargins: boolean;
+}
+
+function buildCutRows(cutList: CutList, plankFullLength: number): CutRow[] {
+  const rows: CutRow[] = [];
+
+  const fullPlankCount =
+    cutList.fullPlanks - cutList.plankAllocations.length;
+  if (fullPlankCount > 0) {
+    rows.push({ length: plankFullLength, count: fullPlankCount });
+  }
+
+  for (let i = 0; i < cutList.plankAllocations.length; i++) {
+    const plank = cutList.plankAllocations[i];
+
+    if (i > 0 || fullPlankCount > 0) {
+      rows.push({ length: 0, isPlankSeparator: true });
+    }
+
+    const sortedCuts = [...plank.cuts].sort((a, b) => b - a);
+    for (const length of sortedCuts) {
+      rows.push({ length });
+    }
+  }
+
+  return rows;
 }
 
 export async function generateCutListSVG(
@@ -13,13 +44,13 @@ export async function generateCutListSVG(
   const { cutList, plankFullLength, woodTexture, includePageBreakMargins } =
     options;
 
-  // A4 landscape dimensions in mm
   const PAGE_WIDTH = 297;
   const PAGE_HEIGHT = 210;
   const MARGIN = 15;
   const PAGE_GAP = 10;
   const BAR_HEIGHT = 8;
   const ROW_GAP = 4;
+  const PLANK_GAP = 2;
   const COUNT_WIDTH = 15;
   const LENGTH_WIDTH = 25;
   const HEADER_HEIGHT = 50;
@@ -28,9 +59,7 @@ export async function generateCutListSVG(
     PAGE_WIDTH - MARGIN * 2 - COUNT_WIDTH - LENGTH_WIDTH - 10;
   const rowHeight = BAR_HEIGHT + ROW_GAP;
 
-  const sortedCuts = Array.from(cutList.cuts.entries()).sort(
-    (a, b) => b[0] - a[0],
-  );
+  const cutRows = buildCutRows(cutList, plankFullLength);
   const scale = availableWidth / plankFullLength;
 
   const totalCuts = Array.from(cutList.cuts.values()).reduce(
@@ -66,22 +95,31 @@ export async function generateCutListSVG(
     <line x1="${MARGIN}" y1="42" x2="${PAGE_WIDTH - MARGIN}" y2="42" stroke="#ddd" stroke-width="0.3"/>`;
 
   if (!includePageBreakMargins) {
-    // Continuous mode: single flowing image, no page breaks
-    const contentHeight =
-      HEADER_HEIGHT + sortedCuts.length * rowHeight + MARGIN;
+    let totalContentHeight = 0;
+    for (const row of cutRows) {
+      totalContentHeight += row.isPlankSeparator ? PLANK_GAP : rowHeight;
+    }
+    const contentHeight = HEADER_HEIGHT + totalContentHeight + MARGIN;
     const totalHeight = Math.max(PAGE_HEIGHT, contentHeight);
 
-    const cutRows = sortedCuts.map(([length, count], i) => {
-      const barWidth = length * scale;
-      const countText = count > 1 ? `${count}x` : "";
+    let yOffset = 0;
+    const rowElements = cutRows.map((row) => {
+      if (row.isPlankSeparator) {
+        yOffset += PLANK_GAP;
+        return "";
+      }
+
+      const barWidth = row.length * scale;
+      const countText = row.count && row.count > 1 ? `${row.count}x` : "";
       const barX = MARGIN + COUNT_WIDTH;
-      const y = HEADER_HEIGHT + i * rowHeight;
+      const y = HEADER_HEIGHT + yOffset;
+      yOffset += rowHeight;
 
       return `
       <g transform="translate(0, ${y})">
         <text x="${MARGIN + COUNT_WIDTH - 3}" y="${BAR_HEIGHT * 0.7}" font-size="3.5" text-anchor="end" fill="#666">${countText}</text>
         <rect x="${barX}" y="0" width="${barWidth}" height="${BAR_HEIGHT}" fill="${woodTexture ? "url(#wood)" : "#8B6F47"}" stroke="#5a4a32" stroke-width="0.3" rx="0.5"/>
-        <text x="${barX + barWidth + 3}" y="${BAR_HEIGHT * 0.7}" font-size="3.5" fill="#333">${length}mm</text>
+        <text x="${barX + barWidth + 3}" y="${BAR_HEIGHT * 0.7}" font-size="3.5" fill="#333">${row.length}mm</text>
       </g>`;
     });
 
@@ -95,53 +133,70 @@ export async function generateCutListSVG(
   </defs>
   <rect width="100%" height="100%" fill="#fafafa"/>
   ${headerSvg}
-  ${cutRows.join("")}
+  ${rowElements.join("")}
 </svg>`;
   }
 
   // Paginated mode: separate A4 pages with gaps
   const contentAreaHeight = PAGE_HEIGHT - HEADER_HEIGHT - MARGIN;
-  const cutsPerPage = Math.floor(contentAreaHeight / rowHeight);
-  const numPages = Math.max(1, Math.ceil(sortedCuts.length / cutsPerPage));
-  const totalHeight = numPages * PAGE_HEIGHT + (numPages - 1) * PAGE_GAP;
 
   const pages: string[] = [];
+  let currentPage = 0;
+  let pageY = 0;
+  let yOffsetInPage = 0;
+  let pageElements: string[] = [];
 
-  for (let page = 0; page < numPages; page++) {
-    const pageY = page * (PAGE_HEIGHT + PAGE_GAP);
-    const pageCuts = sortedCuts.slice(
-      page * cutsPerPage,
-      (page + 1) * cutsPerPage,
-    );
-
-    const cutRows = pageCuts.map(([length, count], i) => {
-      const barWidth = length * scale;
-      const countText = count > 1 ? `${count}x` : "";
-      const barX = MARGIN + COUNT_WIDTH;
-      const y = HEADER_HEIGHT + i * rowHeight;
-
-      return `
-      <g transform="translate(0, ${y})">
-        <text x="${MARGIN + COUNT_WIDTH - 3}" y="${BAR_HEIGHT * 0.7}" font-size="3.5" text-anchor="end" fill="#666">${countText}</text>
-        <rect x="${barX}" y="0" width="${barWidth}" height="${BAR_HEIGHT}" fill="${woodTexture ? "url(#wood)" : "#8B6F47"}" stroke="#5a4a32" stroke-width="0.3" rx="0.5"/>
-        <text x="${barX + barWidth + 3}" y="${BAR_HEIGHT * 0.7}" font-size="3.5" fill="#333">${length}mm</text>
-      </g>`;
-    });
-
-    const isFirstPage = page === 0;
+  function flushPage(isFirstPage: boolean) {
     const header = isFirstPage
       ? headerSvg
       : `
-      <text x="${MARGIN}" y="12" font-size="4" fill="#999">Cut List (continued - page ${page + 1})</text>
+      <text x="${MARGIN}" y="12" font-size="4" fill="#999">Cut List (continued - page ${currentPage + 1})</text>
       <line x1="${MARGIN}" y1="42" x2="${PAGE_WIDTH - MARGIN}" y2="42" stroke="#ddd" stroke-width="0.3"/>`;
 
     pages.push(`
     <g transform="translate(0, ${pageY})">
       <rect width="${PAGE_WIDTH}" height="${PAGE_HEIGHT}" fill="#fafafa"/>
       ${header}
-      ${cutRows.join("")}
+      ${pageElements.join("")}
     </g>`);
+    pageElements = [];
+    currentPage++;
+    pageY += PAGE_HEIGHT + PAGE_GAP;
+    yOffsetInPage = 0;
   }
+
+  for (const row of cutRows) {
+    const neededHeight = row.isPlankSeparator ? PLANK_GAP : rowHeight;
+
+    if (yOffsetInPage + neededHeight > contentAreaHeight && pageElements.length > 0) {
+      flushPage(currentPage === 0);
+    }
+
+    if (row.isPlankSeparator) {
+      yOffsetInPage += PLANK_GAP;
+      continue;
+    }
+
+    const barWidth = row.length * scale;
+    const countText = row.count && row.count > 1 ? `${row.count}x` : "";
+    const barX = MARGIN + COUNT_WIDTH;
+    const y = HEADER_HEIGHT + yOffsetInPage;
+    yOffsetInPage += rowHeight;
+
+    pageElements.push(`
+      <g transform="translate(0, ${y})">
+        <text x="${MARGIN + COUNT_WIDTH - 3}" y="${BAR_HEIGHT * 0.7}" font-size="3.5" text-anchor="end" fill="#666">${countText}</text>
+        <rect x="${barX}" y="0" width="${barWidth}" height="${BAR_HEIGHT}" fill="${woodTexture ? "url(#wood)" : "#8B6F47"}" stroke="#5a4a32" stroke-width="0.3" rx="0.5"/>
+        <text x="${barX + barWidth + 3}" y="${BAR_HEIGHT * 0.7}" font-size="3.5" fill="#333">${row.length}mm</text>
+      </g>`);
+  }
+
+  if (pageElements.length > 0) {
+    flushPage(currentPage === 0);
+  }
+
+  const numPages = Math.max(1, pages.length);
+  const totalHeight = numPages * PAGE_HEIGHT + (numPages - 1) * PAGE_GAP;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg viewBox="0 0 ${PAGE_WIDTH} ${totalHeight}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">

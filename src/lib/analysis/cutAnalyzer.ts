@@ -11,8 +11,15 @@ export interface Offcut {
   length: number;
   sourceRow: number;
   sourceBoard: number;
+  sourcePlank: number;
   allocated: boolean;
   allocatedTo?: { rowIndex: number; boardIndex: number };
+}
+
+export interface PlankAllocation {
+  plankNumber: number;
+  cuts: number[];
+  offcutLength: number;
 }
 
 export interface CutList {
@@ -24,6 +31,7 @@ export interface CutList {
   efficiency: number;
   uniqueCuts: number;
   requirements: CutRequirement[];
+  plankAllocations: PlankAllocation[];
 }
 
 export class CutAnalyzer {
@@ -54,7 +62,7 @@ export class CutAnalyzer {
 
   analyze(): CutList {
     const requirements = this.calculateRequirements();
-    const { fullPlanks, cuts, offcuts, waste, totalMaterial } =
+    const { fullPlanks, cuts, offcuts, waste, totalMaterial, plankAllocations } =
       this.allocateMaterial(requirements);
 
     const usedMaterial = totalMaterial - waste;
@@ -69,6 +77,7 @@ export class CutAnalyzer {
       efficiency,
       uniqueCuts: cuts.size,
       requirements,
+      plankAllocations,
     };
   }
 
@@ -124,6 +133,7 @@ export class CutAnalyzer {
     offcuts: Offcut[];
     waste: number;
     totalMaterial: number;
+    plankAllocations: PlankAllocation[];
   } {
     const plankLength = this.config.plankFullLength;
     const sawKerf = this.config.sawKerf;
@@ -138,6 +148,8 @@ export class CutAnalyzer {
     let totalMaterial = 0;
 
     const availableOffcuts: Offcut[] = [];
+    const plankAllocations: PlankAllocation[] = [];
+    let currentPlankNumber = 0;
 
     for (const req of sortedReqs) {
       if (req.length === plankLength) {
@@ -160,12 +172,20 @@ export class CutAnalyzer {
         const cutCount = cuts.get(req.length) ?? 0;
         cuts.set(req.length, cutCount + 1);
 
+        const allocation = plankAllocations.find(
+          (p) => p.plankNumber === usableOffcut.sourcePlank
+        );
+        if (allocation) {
+          allocation.cuts.push(req.length);
+        }
+
         const remainingLength = usableOffcut.length - req.length - sawKerf;
         if (remainingLength >= minCutLength) {
           availableOffcuts.push({
             length: remainingLength,
             sourceRow: usableOffcut.sourceRow,
             sourceBoard: usableOffcut.sourceBoard,
+            sourcePlank: usableOffcut.sourcePlank,
             allocated: false,
           });
         } else if (remainingLength > 0) {
@@ -173,11 +193,19 @@ export class CutAnalyzer {
         }
         waste += sawKerf;
       } else {
+        currentPlankNumber++;
         fullPlanks++;
         totalMaterial += plankLength;
 
         const cutCount = cuts.get(req.length) ?? 0;
         cuts.set(req.length, cutCount + 1);
+
+        const allocation: PlankAllocation = {
+          plankNumber: currentPlankNumber,
+          cuts: [req.length],
+          offcutLength: 0,
+        };
+        plankAllocations.push(allocation);
 
         const offcutLength = plankLength - req.length - sawKerf;
         if (offcutLength >= minCutLength) {
@@ -185,6 +213,7 @@ export class CutAnalyzer {
             length: offcutLength,
             sourceRow: req.rowIndex,
             sourceBoard: req.boardIndex,
+            sourcePlank: currentPlankNumber,
             allocated: false,
           });
         } else if (offcutLength > 0) {
@@ -197,10 +226,16 @@ export class CutAnalyzer {
     for (const offcut of availableOffcuts) {
       if (!offcut.allocated) {
         waste += offcut.length;
+        const allocation = plankAllocations.find(
+          (p) => p.plankNumber === offcut.sourcePlank
+        );
+        if (allocation) {
+          allocation.offcutLength = offcut.length;
+        }
       }
       offcuts.push(offcut);
     }
 
-    return { fullPlanks, cuts, offcuts, waste, totalMaterial };
+    return { fullPlanks, cuts, offcuts, waste, totalMaterial, plankAllocations };
   }
 }
