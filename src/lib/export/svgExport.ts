@@ -124,7 +124,7 @@ export async function generateCutListSVG(
     });
 
     return `<?xml version="1.0" encoding="UTF-8"?>
-<svg viewBox="0 0 ${PAGE_WIDTH} ${totalHeight}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<svg width="${PAGE_WIDTH}mm" viewBox="0 0 ${PAGE_WIDTH} ${totalHeight}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
   <defs>
     ${woodPatternDef}
     <style>
@@ -199,7 +199,7 @@ export async function generateCutListSVG(
   const totalHeight = numPages * PAGE_HEIGHT + (numPages - 1) * PAGE_GAP;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg viewBox="0 0 ${PAGE_WIDTH} ${totalHeight}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<svg width="${PAGE_WIDTH}mm" viewBox="0 0 ${PAGE_WIDTH} ${totalHeight}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
   <defs>
     ${woodPatternDef}
     <style>
