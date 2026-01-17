@@ -16,11 +16,10 @@ jobs:
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          target: wasm32-unknown-unknown
-          rustflags: ""
-          rust-src-dir: "./solver"
           toolchain: nightly
-
+          target: wasm32-unknown-unknown
+          components: rust-src
+          rustflags: ""
       - name: Install wasm-pack
         run: cargo install wasm-pack --locked || true
 
